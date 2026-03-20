@@ -25,8 +25,7 @@ config-status --json
 
 | 变量 | 是否必需 | 说明 | 示例 |
 |---|---|---|---|
-| `JMS_API_URL` | 与 `JMS_WEB_URL` 二选一 | JumpServer API/访问地址 | `https://jump.example.com` |
-| `JMS_WEB_URL` | 与 `JMS_API_URL` 二选一 | 运行时接受的地址回退变量 | `https://jump.example.com` |
+| `JMS_API_URL` | 必需 | JumpServer API/访问地址 | `https://jump.example.com` |
 | `JMS_VERSION` | 建议配置 | JumpServer 版本，当前默认按 `4` 处理 | `4` |
 | `JMS_ACCESS_KEY_ID` | 与 `JMS_ACCESS_KEY_SECRET` 成组，或改用用户名密码 | AK/SK 鉴权 ID | `your-access-key-id` |
 | `JMS_ACCESS_KEY_SECRET` | 与 `JMS_ACCESS_KEY_ID` 成组，或改用用户名密码 | AK/SK 鉴权密钥 | `your-access-key-secret` |
@@ -57,7 +56,7 @@ JMS_ACCESS_KEY_SECRET="your-access-key-secret"
 
 ## 环境变量规则
 
-- 地址至少提供 `JMS_API_URL` 或 `JMS_WEB_URL` 之一。
+- 必须提供 `JMS_API_URL`。
 - 认证方式必须二选一：`AK/SK` 或 `用户名/密码`。
 - `.env.local` 会被脚本自动加载。
 - 首次配置缺失时，推荐先执行 `python3 scripts/jms_diagnose.py config-status --json`。

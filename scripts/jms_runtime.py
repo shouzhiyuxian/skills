@@ -45,7 +45,6 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 LOCAL_ENV_FILE = SKILL_DIR / ".env.local"
 RUNTIME_ENV_KEYS = (
     "JMS_API_URL",
-    "JMS_WEB_URL",
     "JMS_VERSION",
     "JMS_ACCESS_KEY_ID",
     "JMS_ACCESS_KEY_SECRET",
@@ -58,14 +57,13 @@ RUNTIME_ENV_KEYS = (
 )
 NONSECRET_ENV_KEYS = (
     "JMS_API_URL",
-    "JMS_WEB_URL",
     "JMS_VERSION",
     "JMS_ORG_ID",
     "JMS_TIMEOUT",
     "JMS_SDK_MODULE",
     "JMS_SDK_GET_CLIENT",
 )
-ADDRESS_ENV_KEYS = ("JMS_API_URL", "JMS_WEB_URL")
+ADDRESS_ENV_KEYS = ("JMS_API_URL",)
 ACCESS_KEY_ENV_KEYS = ("JMS_ACCESS_KEY_ID", "JMS_ACCESS_KEY_SECRET")
 BASIC_AUTH_ENV_KEYS = ("JMS_USERNAME", "JMS_PASSWORD")
 WRITABLE_ENV_KEYS = frozenset(RUNTIME_ENV_KEYS)
@@ -237,13 +235,10 @@ def _merge_config_values(payload: dict[str, Any]) -> dict[str, str]:
 
 def _resolve_address_values(values: dict[str, str]) -> dict[str, str]:
     api_url = values.get("JMS_API_URL")
-    web_url = values.get("JMS_WEB_URL")
     if _value_is_set(api_url):
         return {"JMS_API_URL": str(api_url)}
-    if _value_is_set(web_url):
-        return {"JMS_WEB_URL": str(web_url)}
     raise RuntimeError(
-        "JMS_API_URL or JMS_WEB_URL is required in --payload or the current .env.local."
+        "JMS_API_URL is required in --payload or the current .env.local."
     )
 
 
@@ -322,7 +317,6 @@ def write_local_env_config(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     for key in (
         "JMS_API_URL",
-        "JMS_WEB_URL",
         "JMS_VERSION",
         "JMS_ORG_ID",
         "JMS_ACCESS_KEY_ID",
@@ -432,10 +426,10 @@ def _client_pool_key() -> tuple[Any, ...]:
     load_local_env()
 
     version = os.getenv("JMS_VERSION", "4")
-    web_url = os.getenv("JMS_API_URL") or os.getenv("JMS_WEB_URL")
+    web_url = os.getenv("JMS_API_URL")
     if not web_url:
         raise RuntimeError(
-            "JMS_API_URL or JMS_WEB_URL is required. Set it in the environment "
+            "JMS_API_URL is required. Set it in the environment "
             f"or in {LOCAL_ENV_FILE}."
         )
 
@@ -473,7 +467,7 @@ def _client_pool_key() -> tuple[Any, ...]:
 def _build_client() -> Any:
     get_client = load_get_client()
     version = os.getenv("JMS_VERSION", "4")
-    web_url = os.getenv("JMS_API_URL") or os.getenv("JMS_WEB_URL")
+    web_url = os.getenv("JMS_API_URL")
     kwargs: dict[str, Any] = {
         "version": version,
         "web_url": web_url,

@@ -130,8 +130,7 @@ The table below reflects the current implementation and is sourced from `referen
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
-| `JMS_API_URL` | one of `JMS_API_URL` or `JMS_WEB_URL` is required | JumpServer API/access URL | `https://jump.example.com` |
-| `JMS_WEB_URL` | one of `JMS_API_URL` or `JMS_WEB_URL` is required | runtime fallback URL variable | `https://jump.example.com` |
+| `JMS_API_URL` | required | JumpServer API/access URL | `https://jump.example.com` |
 | `JMS_VERSION` | recommended | JumpServer version, currently treated as `4` by default | `4` |
 | `JMS_ACCESS_KEY_ID` | must be paired with `JMS_ACCESS_KEY_SECRET`, or use username/password instead | AK/SK auth ID | `your-access-key-id` |
 | `JMS_ACCESS_KEY_SECRET` | must be paired with `JMS_ACCESS_KEY_ID`, or use username/password instead | AK/SK auth secret | `your-access-key-secret` |
@@ -162,7 +161,7 @@ JMS_ACCESS_KEY_SECRET="your-access-key-secret"
 
 Environment variable rules:
 
-- provide at least one address: `JMS_API_URL` or `JMS_WEB_URL`
+- `JMS_API_URL` is required
 - choose exactly one auth mode: `AK/SK` or `username/password`
 - `.env.local` is auto-loaded by the scripts
 - when first-time config is missing, start with `python3 scripts/jms_diagnose.py config-status --json`

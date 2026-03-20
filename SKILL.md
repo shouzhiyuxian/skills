@@ -11,7 +11,7 @@ JumpServer 查询型 skill：允许环境初始化写入（`.env.local` 与 `JMS
 
 | 类型 | 常见输入 | 返回 |
 |---|---|---|
-| 环境初始化 | `JMS_API_URL/JMS_WEB_URL`、鉴权信息、可选 `org-id` | 配置完整性、`.env.local` 写入结果、连通性、组织写入结果 |
+| 环境初始化 | `JMS_API_URL`、鉴权信息、可选 `org-id` | 配置完整性、`.env.local` 写入结果、连通性、组织写入结果 |
 | 对象查询 | `resource`、`id`、`name`、`filters` | 列表、详情、解析结果 |
 | 权限与审计 | `filters`、`audit-type`、时间范围、`command_storage_id` | 权限详情、审计详情、最近活动 |
 | 访问分析 | `username`、可选 `asset-name` | 用户可访问资产/节点、单资产访问视图 |
