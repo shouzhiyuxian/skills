@@ -1,6 +1,6 @@
 # jumpserver-skills
 
-`jumpserver-skills` is a query-oriented skill repository for JumpServer V4. It supports environment initialization writes, including generating `.env.local` from user-provided config and persisting `JMS_ORG_ID`, while asset, permission, and audit business operations remain read-only.
+`jumpserver-skills` is a query-oriented skill repository for JumpServer V4. It supports queries for assets, accounts, users, user groups, platforms, nodes, permissions, audits, and access analysis, making it suitable for day-to-day operations troubleshooting, permission review, audit investigation, object resolution, and environment initialization. It can generate `.env.local` from user-provided config and persist `JMS_ORG_ID`, but business-object and permission actions are limited to queries only.
 
 ## Overview
 
@@ -11,6 +11,13 @@
 | `scripts/jms_audit.py` | login, operate, session, and command audits | `list`, `get` |
 | `scripts/jms_diagnose.py` | config checks, config writes, connectivity, org selection, resolution, and access analysis | environment init + read-only diagnostics |
 
+## Capability Boundary
+
+- environment initialization writes are allowed: `config-write --confirm` generates or updates `.env.local`, and `select-org --confirm` persists `JMS_ORG_ID`
+- the reserved-org special case is allowed: when the accessible org set is exactly `{0002}` or `{0002,0004}`, runtime may auto-write `0002`
+- asset, permission, and audit business writes remain unsupported; `create/update/delete/append/remove/unblock` are still forbidden
+- this repository is a query-oriented skill, not a general operations executor
+
 ## Core Rules
 
 - start with `python3 scripts/jms_diagnose.py config-status --json`
@@ -19,6 +26,16 @@
 - if org context is missing, run `python3 scripts/jms_diagnose.py select-org --org-id <org-id> --confirm`
 - only the exact reserved org sets `{0002}` or `{0002,0004}` may auto-write `0002`
 - business `create/update/delete/append/remove/unblock` operations remain unsupported
+
+## Capability Matrix
+
+| User intent | Recommended entry point | Key input | Output | Common blocker |
+|---|---|---|---|---|
+| initialize or repair environment | `config-status`, `config-write --confirm`, `ping`, `select-org --confirm` | address, auth, optional `org-id` | config state, `.env.local` write result, connectivity, org persistence result | missing address/auth, connectivity failure, inaccessible org |
+| query assets, accounts, users, groups, platforms, nodes, orgs | `jms_assets.py list/get`, `resolve`, `resolve-platform` | `resource` + `id/name/filters` | lists, details, resolution output | ambiguous names, unclear object, org not ready |
+| query permission rules | `jms_permissions.py list/get` | `id` or `filters` | permission list and detail | org not ready |
+| query audits | `jms_audit.py list/get` | `audit-type`, time window, `command_storage_id` for command audit | login, operate, session, and command audit results | missing `command_storage_id`, org not ready |
+| analyze access | `user-assets`, `user-nodes`, `user-asset-access`, `recent-audit` | `username`, optional `asset-name` / time window | effective asset/node access, single-asset access view, recent audit summary | unknown user, too many candidates, org not ready |
 
 ## Repository Structure
 

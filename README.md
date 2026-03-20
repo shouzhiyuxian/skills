@@ -1,6 +1,6 @@
 # jumpserver-skills
 
-`jumpserver-skills` 是一个面向 JumpServer V4 的查询型 skill 仓库。它支持环境初始化写入，包括根据用户回复生成 `.env.local`、持久化 `JMS_ORG_ID`，但资产、权限、审计相关业务动作仍然只保留查询。
+`jumpserver-skills` 是一个面向 JumpServer V4 的查询型 skill 仓库，支持查询资产、账号、用户、用户组、平台、节点、权限、审计与访问分析任务，适合日常运维排查、权限核查、访问审计、对象解析与环境初始化场景。它支持根据用户回复生成 `.env.local`、持久化 `JMS_ORG_ID`，但业务对象和权限相关操作仅限查询。
 
 [English](./README.en.md)
 
@@ -13,6 +13,13 @@
 | `scripts/jms_audit.py` | 登录、操作、会话、命令审计 | `list`、`get` |
 | `scripts/jms_diagnose.py` | 配置检查、配置写入、连通性、组织选择、对象解析、访问分析 | 环境初始化 + 只读诊断 |
 
+## 能力边界
+
+- 允许环境初始化写入：`config-write --confirm` 会生成或更新 `.env.local`，`select-org --confirm` 会写回 `JMS_ORG_ID`
+- 允许保留组织特判：可访问组织集合恰好为 `{0002}` 或 `{0002,0004}` 时，运行时可自动写入 `0002`
+- 不支持资产、权限、审计相关业务写操作；`create/update/delete/append/remove/unblock` 仍然全部禁止
+- 当前仓库是查询型 skill，不是通用运维执行器
+
 ## 核心规则
 
 - 先执行 `python3 scripts/jms_diagnose.py config-status --json`
@@ -21,6 +28,16 @@
 - 缺少组织上下文时，执行 `python3 scripts/jms_diagnose.py select-org --org-id <org-id> --confirm`
 - 只有 `{0002}` 或 `{0002,0004}` 两种保留组织集合才会自动写入 `0002`
 - 不支持业务对象和权限的 `create/update/delete/append/remove/unblock`
+
+## 功能矩阵
+
+| 用户意图 | 推荐入口 | 关键输入 | 输出 | 常见阻塞 |
+|---|---|---|---|---|
+| 初始化或补全环境 | `config-status`、`config-write --confirm`、`ping`、`select-org --confirm` | 地址、鉴权、可选 `org-id` | 配置状态、`.env.local` 写入结果、连通性、组织持久化结果 | 地址/鉴权缺失、连通失败、组织不可访问 |
+| 查资产、账号、用户、用户组、平台、节点、组织 | `jms_assets.py list/get`、`resolve`、`resolve-platform` | `resource` + `id/name/filters` | 列表、详情、解析结果 | 名称不唯一、对象不清楚、组织未准备好 |
+| 查权限规则 | `jms_permissions.py list/get` | `id` 或 `filters` | 权限列表、权限详情 | 组织未准备好 |
+| 查审计 | `jms_audit.py list/get` | `audit-type`、时间范围、命令审计需 `command_storage_id` | 登录、操作、会话、命令审计 | `command_storage_id` 缺失、组织未准备好 |
+| 做访问分析 | `user-assets`、`user-nodes`、`user-asset-access`、`recent-audit` | `username`、可选 `asset-name` / 时间范围 | 用户可访问资产/节点、单资产访问视图、最近审计摘要 | 用户不存在、候选过多、组织未准备好 |
 
 ## 仓库结构
 
