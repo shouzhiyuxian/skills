@@ -47,14 +47,15 @@
 ├── agents/
 │   └── openai.yaml
 ├── references/
-│   ├── assets.md
-│   ├── audit.md
-│   ├── diagnose.md
-│   ├── object-map.md
-│   ├── permissions.md
-│   ├── runtime.md
-│   ├── safety-rules.md
-│   └── troubleshooting.md
+│   ├── audit-queries.md
+│   ├── object-mapping.md
+│   ├── object-queries.md
+│   ├── permission-pagination-validation.md
+│   ├── permission-queries.md
+│   ├── preflight-and-diagnostics.md
+│   ├── query-boundaries.md
+│   ├── runtime-behavior.md
+│   └── troubleshooting-guide.md
 ├── scripts/
 │   ├── jms_assets.py
 │   ├── jms_audit.py
@@ -125,7 +126,7 @@ python3 scripts/jms_audit.py list --audit-type operate --filters '{"limit":30}'
 
 ## Environment Variables
 
-The table below reflects the current implementation and is sourced from `references/runtime.md` and `scripts/jms_runtime.py`. On first use, the skill can collect these values in dialog and write the result into a local `.env.local`.
+The table below reflects the current implementation and is sourced from `references/runtime-behavior.md` and `scripts/jms_runtime.py`. On first use, the skill can collect these values in dialog and write the result into a local `.env.local`.
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
@@ -204,13 +205,15 @@ python3 scripts/jms_audit.py get --audit-type command --id <command-id> --filter
 | File | Purpose |
 |---|---|
 | `SKILL.md` | routing rules, environment-init boundaries, and query boundaries |
-| `references/runtime.md` | environment model, `.env.local` writes, and org persistence |
-| `references/assets.md` | asset query guide |
-| `references/permissions.md` | permission query guide |
-| `references/audit.md` | audit query guide |
-| `references/diagnose.md` | config/org/resolution/access-analysis guide |
-| `references/safety-rules.md` | allowed environment writes and forbidden business writes |
-| `references/troubleshooting.md` | common troubleshooting paths |
+| `references/runtime-behavior.md` | environment model, `.env.local` writes, and org persistence |
+| `references/object-queries.md` | asset, account, user, group, platform, node, and organization query guide |
+| `references/permission-queries.md` | permission query guide |
+| `references/audit-queries.md` | audit query guide |
+| `references/preflight-and-diagnostics.md` | config, org, resolution, and access-analysis guide |
+| `references/object-mapping.md` | natural-language-to-resource mapping guide |
+| `references/query-boundaries.md` | allowed environment writes and forbidden business writes |
+| `references/troubleshooting-guide.md` | common troubleshooting paths |
+| `references/permission-pagination-validation.md` | validation record for `jms_permissions.py list` auto-pagination |
 
 ## Unsupported Scope
 

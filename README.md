@@ -49,14 +49,15 @@
 ├── agents/
 │   └── openai.yaml
 ├── references/
-│   ├── assets.md
-│   ├── audit.md
-│   ├── diagnose.md
-│   ├── object-map.md
-│   ├── permissions.md
-│   ├── runtime.md
-│   ├── safety-rules.md
-│   └── troubleshooting.md
+│   ├── audit-queries.md
+│   ├── object-mapping.md
+│   ├── object-queries.md
+│   ├── permission-pagination-validation.md
+│   ├── permission-queries.md
+│   ├── preflight-and-diagnostics.md
+│   ├── query-boundaries.md
+│   ├── runtime-behavior.md
+│   └── troubleshooting-guide.md
 ├── scripts/
 │   ├── jms_assets.py
 │   ├── jms_audit.py
@@ -127,7 +128,7 @@ python3 scripts/jms_audit.py list --audit-type operate --filters '{"limit":30}'
 
 ## 环境变量
 
-下表以当前实现为准，来源于 `references/runtime.md` 和 `scripts/jms_runtime.py`。首次调用时，skill 会按这些字段要求通过对话收集配置，并把结果写入本地 `.env.local`。
+下表以当前实现为准，来源于 `references/runtime-behavior.md` 和 `scripts/jms_runtime.py`。首次调用时，skill 会按这些字段要求通过对话收集配置，并把结果写入本地 `.env.local`。
 
 | 变量 | 是否必需 | 说明 | 示例 |
 |---|---|---|---|
@@ -206,13 +207,15 @@ python3 scripts/jms_audit.py get --audit-type command --id <command-id> --filter
 | 文件 | 用途 |
 |---|---|
 | `SKILL.md` | 路由规则、环境初始化边界、查询边界 |
-| `references/runtime.md` | 环境变量模型、`.env.local` 写入、组织持久化 |
-| `references/assets.md` | 资产类查询 |
-| `references/permissions.md` | 权限查询 |
-| `references/audit.md` | 审计查询 |
-| `references/diagnose.md` | 配置/组织/解析/访问分析 |
-| `references/safety-rules.md` | 允许的环境写入与禁止的业务写入 |
-| `references/troubleshooting.md` | 常见错误排查 |
+| `references/runtime-behavior.md` | 环境变量模型、`.env.local` 写入、组织持久化 |
+| `references/object-queries.md` | 资产、账号、用户、用户组、平台、节点、组织查询 |
+| `references/permission-queries.md` | 权限查询 |
+| `references/audit-queries.md` | 审计查询 |
+| `references/preflight-and-diagnostics.md` | 配置/组织/解析/访问分析 |
+| `references/object-mapping.md` | 自然语言到资源类型的映射建议 |
+| `references/query-boundaries.md` | 允许的环境写入与禁止的业务写入 |
+| `references/troubleshooting-guide.md` | 常见错误排查 |
+| `references/permission-pagination-validation.md` | `jms_permissions.py list` 自动翻页验证记录 |
 
 ## 不支持范围
 
