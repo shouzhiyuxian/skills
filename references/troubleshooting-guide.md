@@ -6,7 +6,7 @@
 |---|---|---|
 | `python3: command not found` | 没有可用的 Python 3 | 先安装或确认 `python3` |
 | `No module named jms_client` | 当前解释器缺依赖 | `python3 -m pip install -r requirements.txt` |
-| `JMS_API_URL or JMS_WEB_URL is required.` | 没有地址配置 | 先 `config-status --json`，再用 `config-write --confirm` |
+| `JMS_API_URL is required.` | 没有地址配置 | 先 `config-status --json`，再用 `config-write --confirm` |
 | `Provide either JMS_ACCESS_KEY_ID/... or JMS_USERNAME/...` | 鉴权配置不完整 | 用完整 payload 重跑 `config-write --confirm` |
 | `This action requires --confirm after the change preview is reviewed.` | 环境写入少了确认 | 给 `config-write` 或 `select-org` 补 `--confirm` |
 | `selection_required=true` | 当前没有 `JMS_ORG_ID` | 先 `select-org`，再 `select-org --confirm` |
