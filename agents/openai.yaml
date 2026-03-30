@@ -1,25 +1,15 @@
 interface:
   display_name: "JumpServer Skills"
-  short_description: "JumpServer V4 资产、权限、审计与访问分析查询 skill，适合排障、核查与环境初始化场景；支持 `config-write` / `select-org --confirm`。"
+  short_description: "JumpServer V4.10 查询与分析 skill。适用于资产/账号/用户/组织/权限查询、登录/会话/命令/传输审计、治理巡检、访问分析，以及某天或某时间段的 JumpServer 使用报告、日报、使用情况、使用分析、审计分析；报告类请求必须优先走正式入口 `jms_report.py`。"
   default_prompt: |
-    使用 $jumpserver-skills 处理 JumpServer V4 环境初始化与只读查询请求。
-    适用场景：配置检查、生成 `.env.local`、选择组织、资产/账号/用户/用户组/平台/节点查询、权限查询、审计查询、访问分析。
-
-    固定预检链路：
-    `config-status --json -> config-write --confirm（如需） -> ping -> select-org --confirm（如需） -> read-only query`
-
-    正式入口：
-    - `jms_diagnose.py`：环境初始化、连通性、组织选择、对象解析、访问分析
-    - `jms_assets.py`：资产、账号、用户、用户组、平台、节点、组织查询
-    - `jms_permissions.py`：权限查询
-    - `jms_audit.py`：审计查询
-
-    关键规则：
-    - 仅当可访问组织集合恰好是 `{0002}` 或 `{0002,0004}` 时，才允许自动写入 `0002`
-    - 审计默认最近 7 天
-    - `command` 审计缺 `command_storage_id` 时先停下
-
-    边界：
-    - 这是查询型 skill，不是通用运维执行器
-    - 不支持 create/update/delete/append/remove/unblock 等 JumpServer 业务写操作
-    - 不生成临时 SDK/HTTP 绕行脚本
+    使用 $jumpserver-skills 处理 JumpServer V4.10 请求。
+    先判请求的核心对象是否为某一天或某一段时间内的 JumpServer 使用数据分析；这包括使用报告、日报、使用情况、使用分析、审计分析、某天发生了什么、分析 `20260310`、看某天登录/会话/命令情况、JumpServer 使用概览等说法。
+    如果是，必须优先使用 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；由它加载 `template/bastion-daily-usage-template.html` 与 `references/metadata/daily_usage_report_template_fields.json`，并在输出前完成生成后自检。
+    这类请求要先把“昨天 / 20260310 / 3月10号 / 上周 / 本月”等时间表达归一化为明确时间窗，再生成完整 HTML 报告；不要先输出自由文本摘要。摘要只能作为报告的简短补充。
+    只有当用户明确说“不要生成报告，直接分析”“先简单说下”“只给我结论”“不用模板”时，才允许跳过模板直接给简短分析。
+    报告或使用分析请求未指定组织，或用户明确说“所有组织”“全局组织”时，默认执行 `python3 scripts/jumpserver_api/jms_diagnose.py select-org --org-id 00000000-0000-0000-0000-000000000000 --confirm`；全局组织可访问性允许通过显式 `select-org` / 直连探测确认；如果用户明确指定某个组织，就查询该组织；如果 `0000` 直连验证失败，返回 `candidate_orgs`，不要回退到 `{0002}` / `{0002,0004}` 规则。
+    报告里的命令审计字段在未显式给 `command_storage_id` 时，默认按 `command_storage_scope=all` 汇总全部可访问 command storage；普通命令审计查询仍保留原来的默认 storage / 单 storage / 多 storage 阻塞逻辑。
+    如果是配置、组织、连通性、解析、设置、许可证、巡检、治理或 capability 聚合分析，优先走 `python3 scripts/jumpserver_api/jms_diagnose.py ...`。
+    如果是权限关系，走 `python3 scripts/jumpserver_api/jms_query.py permission-list ...` / `permission-get ...`；如果是登录、会话、命令、传输和行为审计，走 `python3 scripts/jumpserver_api/jms_query.py audit-analyze ...` 或相关审计子命令；如果是对象查询，走 `python3 scripts/jumpserver_api/jms_query.py object-list ...` / `object-get ...`。
+    先做 `config-status --json` 和 `ping` 预检；普通查询优先只选 1 个正式入口，报告请求的完成标准是“生成并验证通过的 HTML 报告”；如果未确定组织且存在多个可访问组织，返回 `candidate_orgs` 提醒用户选择查询组织；如果当前组织已生效且还有其他可访问组织，继续回显 `switchable_orgs`。
+    只使用正式 CLI 入口，不生成临时 SDK/HTTP 脚本，不现场写临时报告拼装逻辑，不猜对象 ID、组织或鉴权信息，不执行业务写操作。

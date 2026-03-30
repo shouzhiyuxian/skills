@@ -1,210 +1,172 @@
-# jumpserver-skills
+# JumpServer Skills
 
-`jumpserver-skills` 是一个面向 JumpServer V4 的查询型 skill 仓库，支持查询资产、账号、用户、用户组、平台、节点、权限、审计与访问分析任务，适合日常运维排查、权限核查、访问审计、对象解析与环境初始化场景。它支持根据用户回复生成 `.env.local`、持久化 `JMS_ORG_ID`，但业务对象和权限相关操作仅限查询。
+`jumpserver-skills` 是一个面向 JumpServer V4.10 的查询、审计分析与模板化使用报告 skill 仓库，适用于对象查询、权限回看、审计调查、治理巡检、访问分析，以及某一天或某一段时间的堡垒机使用报告。它更像一套可复用的 skill 规则与正式入口封装，而不是要求使用者手动拼接脚本命令的 CLI 教程。
+
+仓库内部会按请求类型自动路由到 `jms_query.py`、`jms_diagnose.py`、`jms_report.py` 三类正式入口。默认保持只读，仅允许本地运行时写入 `.env` 和当前组织上下文，不执行 JumpServer 业务写操作。
 
 [English](./README.en.md)
 
-## 项目概览
+## 最快上手
 
-| 入口 | 作用 | 当前范围 |
-|---|---|---|
-| `scripts/jms_assets.py` | 资产、账号、用户、用户组、平台、节点、组织查询 | `list`、`get` |
-| `scripts/jms_permissions.py` | 授权规则查询 | `list`、`get` |
-| `scripts/jms_audit.py` | 登录、操作、会话、命令审计 | `list`、`get` |
-| `scripts/jms_diagnose.py` | 配置检查、配置写入、连通性、组织选择、对象解析、访问分析 | 环境初始化 + 只读诊断 |
+1. 把这个 skill 接到你的 agent 或 Codex 环境里。仓库中的 [agents/openai.yaml](./agents/openai.yaml) 可以直接作为接入描述使用。
+2. 直接用自然语言初始化配置，例如“帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录”。
+3. 然后继续直接提需求，例如“查某个用户有哪些资产”或“看看昨天使用情况”。
 
-## 能力边界
+第一次使用时，优先推荐走“自然语言对话生成 `.env`”这条路径，通常比手动改模板更快。
 
-- 允许环境初始化写入：`config-write --confirm` 会生成或更新 `.env.local`，`select-org --confirm` 会写回 `JMS_ORG_ID`
-- 允许保留组织特判：可访问组织集合恰好为 `{0002}` 或 `{0002,0004}` 时，运行时可自动写入 `0002`
-- 不支持资产、权限、审计相关业务写操作；`create/update/delete/append/remove/unblock` 仍然全部禁止
-- 当前仓库是查询型 skill，不是通用运维执行器
+## 这个 skill 能做什么
 
-## 核心规则
+| 能力分组 | 适合处理的请求 | 入口名称 | 说明 |
+|---|---|---|---|
+| 对象查询 | 资产、账号、用户、用户组、组织、平台、节点、标签、网域查询 | `jms_query.py` | 适合精确查询对象清单或读取单个对象详情 |
+| 权限关系 | 授权规则、ACL、RBAC、谁能访问某资产、某条权限详情 | `jms_query.py` | 只做读取和解释，不承担权限写入 |
+| 审计调查 | 登录、会话、命令、文件传输、异常行为、高危命令、失败登录调查 | `jms_query.py` | 适合日志、记录、明细、详情类请求 |
+| 配置与诊断 | 配置检查、连通性、组织切换、对象解析、许可证、系统设置、存储、工单 | `jms_diagnose.py` | 适合预检、环境确认和治理前置检查 |
+| 治理巡检 | 资产治理、账号治理、访问分析、系统巡检、capability 聚合分析 | `jms_diagnose.py` | 优先走能力化聚合，而不是让使用者手工拼零散查询 |
+| 使用报告 | 日报、使用情况、使用分析、某天发生了什么、某时间段排行或概览 | `jms_report.py` | 这类请求默认输出完整 HTML 报告，而不是只给一句摘要 |
 
-- 先执行 `python3 scripts/jms_diagnose.py config-status --json`
-- 配置不完整时，按用户提供的信息执行 `python3 scripts/jms_diagnose.py config-write --payload '<json>' --confirm`
-- 再执行 `python3 scripts/jms_diagnose.py ping`
-- 缺少组织上下文时，执行 `python3 scripts/jms_diagnose.py select-org --org-id <org-id> --confirm`
-- 只有 `{0002}` 或 `{0002,0004}` 两种保留组织集合才会自动写入 `0002`
-- 不支持业务对象和权限的 `create/update/delete/append/remove/unblock`
+## 怎么使用这个 skill
 
-## 功能矩阵
+1. 准备环境文件。在仓库根目录创建 `.env`，有两种方式：
 
-| 用户意图 | 推荐入口 | 关键输入 | 输出 | 常见阻塞 |
-|---|---|---|---|---|
-| 初始化或补全环境 | `config-status`、`config-write --confirm`、`ping`、`select-org --confirm` | 地址、鉴权、可选 `org-id` | 配置状态、`.env.local` 写入结果、连通性、组织持久化结果 | 地址/鉴权缺失、连通失败、组织不可访问 |
-| 查资产、账号、用户、用户组、平台、节点、组织 | `jms_assets.py list/get`、`resolve`、`resolve-platform` | `resource` + `id/name/filters` | 列表、详情、解析结果 | 名称不唯一、对象不清楚、组织未准备好 |
-| 查权限规则 | `jms_permissions.py list/get` | `id` 或 `filters` | 权限列表、权限详情 | 组织未准备好 |
-| 查审计 | `jms_audit.py list/get` | `audit-type`、时间范围、命令审计需 `command_storage_id` | 登录、操作、会话、命令审计 | `command_storage_id` 缺失、组织未准备好 |
-| 做访问分析 | `user-assets`、`user-nodes`、`user-asset-access`、`recent-audit` | `username`、可选 `asset-name` / 时间范围 | 用户可访问资产/节点、单资产访问视图、最近审计摘要 | 用户不存在、候选过多、组织未准备好 |
-
-## 仓库结构
-
-```text
-.
-├── SKILL.md
-├── README.md
-├── README.en.md
-├── agents/
-│   └── openai.yaml
-├── references/
-│   ├── audit-queries.md
-│   ├── object-mapping.md
-│   ├── object-queries.md
-│   ├── permission-pagination-validation.md
-│   ├── permission-queries.md
-│   ├── preflight-and-diagnostics.md
-│   ├── query-boundaries.md
-│   ├── runtime-behavior.md
-│   └── troubleshooting-guide.md
-├── scripts/
-│   ├── jms_assets.py
-│   ├── jms_audit.py
-│   ├── jms_bootstrap.py
-│   ├── jms_diagnose.py
-│   ├── jms_permissions.py
-│   └── jms_runtime.py
-├── env.sh
-└── requirements.txt
-```
-
-## 技术栈与依赖
-
-| 项目 | 当前实现 |
-|---|---|
-| 语言 | Python 3 |
-| 核心依赖 | `jumpserver-sdk-python>=0.9.1` |
-| 运行方式 | 本地 CLI 脚本，通过 `python3 scripts/jms_*.py ...` 调用 |
-| 目标系统 | JumpServer V4 |
-| 配置来源 | `.env.local` + 进程环境变量 |
-| 配置写入 | `jms_diagnose.py config-write --confirm` |
-| 组织持久化 | `jms_diagnose.py select-org --confirm` |
-
-安装依赖：
+手动方式：
 
 ```bash
-python3 -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-## 快速开始
+对话方式：
 
-检查与初始化环境：
+如果本地配置不完整，运行时也可以直接通过自然语言对话帮你生成 `.env`。它会按固定顺序收集 `JMS_API_URL`、认证方式、组织、超时和 TLS 配置，回显脱敏摘要后写入本地 `.env`。例如：
 
-```bash
-python3 scripts/jms_diagnose.py config-status --json
-python3 scripts/jms_diagnose.py config-write --payload '{"JMS_API_URL":"https://jump.example.com","JMS_ACCESS_KEY_ID":"<ak>","JMS_ACCESS_KEY_SECRET":"<sk>","JMS_VERSION":"4"}' --confirm
-python3 scripts/jms_diagnose.py ping
-```
+- “帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录。”
+- “帮我初始化 JumpServer 配置，我用用户名密码登录，不校验证书。”
 
-查看和写入组织：
+2. 把这个 skill 接到你的 agent 或 Codex 环境里使用。仓库中的 [agents/openai.yaml](./agents/openai.yaml) 提供了一个现成的 skill 接入描述，可作为引用或注册该 skill 的入口之一。
 
-```bash
-python3 scripts/jms_diagnose.py select-org
-python3 scripts/jms_diagnose.py select-org --org-id <org-id>
-python3 scripts/jms_diagnose.py select-org --org-id <org-id> --confirm
-```
+3. 直接用自然语言描述需求，不需要手动拼接脚本命令。例如“查某个用户有哪些资产”“看看昨天使用情况”“看某条授权规则详情”。
 
-之后再执行查询，例如：
+4. 根据返回结果继续补充上下文。如果结果提示 `candidate_orgs`、`switchable_orgs`、候选对象或缺少时间范围，就按提示补充组织、对象名称、平台或时间窗口。
 
-```bash
-python3 scripts/jms_assets.py list --resource user --filters '{"username":"demo-user"}'
-python3 scripts/jms_permissions.py list --filters '{"limit":20}'
-python3 scripts/jms_audit.py list --audit-type operate --filters '{"limit":30}'
-```
+使用时不需要记住具体执行命令。这个 skill 会先做预检，再按路由规则自动选择正式入口，并在需要时提示你补充组织、对象或时间范围。
 
 ## 环境变量
 
-下表以当前实现为准，来源于 `references/runtime-behavior.md` 和 `scripts/jms_runtime.py`。首次调用时，skill 会按这些字段要求通过对话收集配置，并把结果写入本地 `.env.local`。
+仓库根目录下提供了 [`.env.example`](./.env.example) 作为模板。实际使用时，需要在仓库根目录准备 `.env` 文件；可以直接复制模板后修改，也可以参考模板手动新建。
 
-| 变量 | 是否必需 | 说明 | 示例 |
-|---|---|---|---|
-| `JMS_API_URL` | 必需 | JumpServer API/访问地址 | `https://jump.example.com` |
-| `JMS_VERSION` | 建议配置 | JumpServer 版本，当前默认按 `4` 处理 | `4` |
-| `JMS_ACCESS_KEY_ID` | 与 `JMS_ACCESS_KEY_SECRET` 成组，或改用用户名密码 | AK/SK 鉴权 ID | `your-access-key-id` |
-| `JMS_ACCESS_KEY_SECRET` | 与 `JMS_ACCESS_KEY_ID` 成组，或改用用户名密码 | AK/SK 鉴权密钥 | `your-access-key-secret` |
-| `JMS_USERNAME` | 与 `JMS_PASSWORD` 成组，或改用 AK/SK | 用户名密码鉴权用户名 | `ops-user` |
-| `JMS_PASSWORD` | 与 `JMS_USERNAME` 成组，或改用 AK/SK | 用户名密码鉴权密码 | `your-password` |
-| `JMS_ORG_ID` | 初始化时可选 | 业务执行前通过 `select-org` 或保留组织特判写入 | `00000000-0000-0000-0000-000000000000` |
-| `JMS_TIMEOUT` | 可选 | SDK 请求超时秒数 | `30` |
-| `JMS_SDK_MODULE` | 可选 | 自定义 SDK 模块路径，默认 `jms_client.client` | `jms_client.client` |
-| `JMS_SDK_GET_CLIENT` | 可选 | 自定义 client 工厂函数名，默认 `get_client` | `get_client` |
+如果不想手动编辑，也可以直接通过自然语言对话生成 `.env`。当检测到配置缺失或不完整时，skill 会按顺序收集必要字段，并通过正式入口把配置写入本地 `.env`。
 
-生成后的 `.env.local` 示例：
+如果你想一次把信息说清，通常准备下面这些就够了：
 
-```dotenv
-JMS_API_URL="https://jump.example.com"
-JMS_VERSION="4"
-JMS_ORG_ID=""
+- `JMS_API_URL`
+- 一组完整认证方式：`JMS_ACCESS_KEY_ID/JMS_ACCESS_KEY_SECRET` 或 `JMS_USERNAME/JMS_PASSWORD`
+- `JMS_ORG_ID`，不确定时可以先留空
+- `JMS_TIMEOUT`，不填则使用默认值
+- `JMS_VERIFY_TLS`，不填时默认 `false`
 
-JMS_ACCESS_KEY_ID="your-access-key-id"
-JMS_ACCESS_KEY_SECRET="your-access-key-secret"
-
-# JMS_USERNAME="ops-user"
-# JMS_PASSWORD="your-password"
-
-# JMS_TIMEOUT="30"
-# JMS_SDK_MODULE="jms_client.client"
-# JMS_SDK_GET_CLIENT="get_client"
-```
+| 变量 | 是否必需 | 说明 |
+|---|---|---|
+| `JMS_API_URL` | 必需 | JumpServer API / 访问地址 |
+| `JMS_ACCESS_KEY_ID` | 与 `JMS_ACCESS_KEY_SECRET` 成组，或改用用户名密码 | API Access Key ID |
+| `JMS_ACCESS_KEY_SECRET` | 与 `JMS_ACCESS_KEY_ID` 成组，或改用用户名密码 | API Access Key Secret |
+| `JMS_USERNAME` | 与 `JMS_PASSWORD` 成组，或改用 AK/SK | JumpServer 登录用户名 |
+| `JMS_PASSWORD` | 与 `JMS_USERNAME` 成组，或改用 AK/SK | JumpServer 登录密码 |
+| `JMS_ORG_ID` | 初始化时可选 | 业务执行前会通过组织选择流程或保留组织规则写入 |
+| `JMS_TIMEOUT` | 可选 | 请求超时秒数 |
+| `JMS_VERIFY_TLS` | 可选 | 是否校验证书，默认 `false` |
 
 环境变量规则：
 
-- 必须提供 `JMS_API_URL`
-- 认证方式必须二选一：`AK/SK` 或 `用户名/密码`
-- `.env.local` 会被脚本自动加载
-- 首次配置缺失时，推荐先执行 `python3 scripts/jms_diagnose.py config-status --json`
-- 如果你切换了 JumpServer、账号、组织或 `.env.local` 内容，应该按首次运行重新做全量校验
+- 必须提供 `JMS_API_URL`。
+- 认证方式至少完整提供一组：`JMS_ACCESS_KEY_ID/JMS_ACCESS_KEY_SECRET` 或 `JMS_USERNAME/JMS_PASSWORD`。
+- `.env` 会被运行时自动加载。
+- 如果 `.env` 缺失或不完整，可以直接通过自然语言对话补齐，运行时会在确认后生成或覆盖本地 `.env`。
+- 首次使用前，需要确保地址、认证方式、组织、超时和 TLS 配置齐全。
+- 如果切换了 JumpServer、账号、组织或 `.env` 内容，应重新执行完整预检。
 
-实现备注：
+## 典型请求示例
 
-- 当前 `scripts/jms_runtime.py` 在构造 client 时固定使用 `verify=False`
-- HTTPS 证书告警会被抑制
-- 这两个行为目前不是通过环境变量控制的
+- “查一下 `Demo-User` 这个用户的详情。”
+- “看看名为 `Demo-Node` 的资产节点里有哪些资产。”
+- “帮我看 `Linux` 平台下有哪些可用资产。”
+- “看这条授权规则详情，顺便告诉我它影响哪些用户和资产。”
+- “谁能访问这台资产？”
+- “查最近一周的登录审计。”
+- “看某个用户的会话记录和异常中断情况。”
+- “帮我排查昨天的高危命令和文件传输审计。”
+- “看看某天使用情况。”
+- “帮我看昨天登录情况。”
+- “想看上周谁登录最多。”
+- “过一下 3 月上旬哪些资产最活跃。”
+- “看某天登录日志明细。”
+- “导出某天命令记录详情。”
 
-## 常用命令
+这类边界尤其重要：
 
-对象查询：
+- `某天登录情况`、`某天会话概览`、`某时间段谁最多` 这类表达，属于报告/使用分析。
+- `某天登录日志`、`某天命令记录`、`某条会话详情` 这类表达，属于审计调查。
 
-```bash
-python3 scripts/jms_assets.py list --resource asset --filters '{"name":"demo-asset"}'
-python3 scripts/jms_assets.py get --resource user --id <user-id>
-python3 scripts/jms_diagnose.py resolve --resource node --name demo-node
-python3 scripts/jms_diagnose.py resolve-platform --value Linux
-```
+## 使用报告与时间范围规则
 
-访问分析：
+只要请求的核心对象是某一天或某一段时间内的 JumpServer 使用数据分析，就会优先走模板化报告流程。这包括：
 
-```bash
-python3 scripts/jms_diagnose.py user-assets --username demo-user
-python3 scripts/jms_diagnose.py user-nodes --username demo-user
-python3 scripts/jms_diagnose.py user-asset-access --username demo-user --asset-name demo-asset
-```
+- 使用报告、日报、周报、月报
+- 使用情况、使用分析、使用统计、使用汇总、使用概览
+- 审计分析、某天发生了什么
+- 某天登录 / 会话 / 命令 / 传输情况
+- 某时间段的排行、TOP、谁最多、哪些资产最活跃
 
-审计查询：
+这类请求默认直接产出完整 HTML 报告，不先回退成自由文本摘要。只有当用户明确说“不要生成报告，直接分析”“先简单说下”“只给我结论”“不用模板”时，才允许跳过模板直接给简短分析。
 
-```bash
-python3 scripts/jms_audit.py list --audit-type login --filters '{"limit":10}'
-python3 scripts/jms_audit.py get --audit-type command --id <command-id> --filters '{"command_storage_id":"<command-storage-id>"}'
-```
+时间表达会先归一化为明确时间窗：
+
+- “昨天” -> 前一天 `00:00:00 ~ 23:59:59`
+- `20260310` -> `2026-03-10 00:00:00 ~ 23:59:59`
+- `2026-03-10` / `2026/03/10` / `3月10号` / `3 月 10 日` -> 同一天 `00:00:00 ~ 23:59:59`
+- “上周” -> 上一个自然周，周一 `00:00:00 ~ 周日 23:59:59`
+- “本月” -> 本月 1 日 `00:00:00` 到当前日期或月末 `23:59:59`
+
+报告固定输出到 `reports/JumpServer-YYYY-MM-DD.html`。如果请求里涉及命令审计字段，报告会按既定规则处理可访问的 command storage 汇总，不需要使用者手动选择内部取数逻辑。
+
+## 组织选择与阻塞规则
+
+- 用户显式指定组织时，按用户指定组织执行。
+- 报告或使用分析请求未指定组织，或用户明确说“所有组织”“全局组织”时，默认优先尝试全局组织 `00000000-0000-0000-0000-000000000000`。
+- 普通查询请求未指定组织时，会按现有组织规则处理；如果无法自动确定组织，会返回 `candidate_orgs`，提示先选择查询组织。
+- 当前组织已生效但仍有其他可切换组织时，结果会继续回显 `switchable_orgs`，方便按其他组织继续查询。
+- 如果当前组织是 A、目标对象在 B，不会自动跨组织继续执行。
+
+出现下面这些情况时，skill 会先阻塞，而不是继续猜测执行：
+
+- 配置或鉴权不完整
+- 组织不明确，且不能自动确定
+- 对象名称重名或平台不明确
+- 查询结果跨组织
+- 报告请求的全局组织不可访问
+- 用户试图绕过正式入口或跳过预检
 
 ## 文档地图
 
 | 文件 | 用途 |
 |---|---|
-| `SKILL.md` | 路由规则、环境初始化边界、查询边界 |
-| `references/runtime-behavior.md` | 环境变量模型、`.env.local` 写入、组织持久化 |
-| `references/object-queries.md` | 资产、账号、用户、用户组、平台、节点、组织查询 |
-| `references/permission-queries.md` | 权限查询 |
-| `references/audit-queries.md` | 审计查询 |
-| `references/preflight-and-diagnostics.md` | 配置/组织/解析/访问分析 |
-| `references/object-mapping.md` | 自然语言到资源类型的映射建议 |
-| `references/query-boundaries.md` | 允许的环境写入与禁止的业务写入 |
-| `references/troubleshooting-guide.md` | 常见错误排查 |
-| `references/permission-pagination-validation.md` | `jms_permissions.py list` 自动翻页验证记录 |
+| [SKILL.md](./SKILL.md) | skill 的顶部路由规则、组织优先级与响应约束 |
+| [agents/openai.yaml](./agents/openai.yaml) | skill 接入描述与默认提示词入口 |
+| [references/routing-playbook.md](./references/routing-playbook.md) | 普通路由、典型触发词、阻塞规则与反例 |
+| [references/report-template-playbook.md](./references/report-template-playbook.md) | 模板化报告流程、组织优先级、时间范围与报告规则 |
+| [references/runtime.md](./references/runtime.md) | 预检流程、环境变量模型、组织选择与运行时约束 |
+| [references/capabilities.md](./references/capabilities.md) | capability 能力目录与能力说明 |
+| [references/assets.md](./references/assets.md) | 资产、账号、用户、节点、平台等对象查询说明 |
+| [references/permissions.md](./references/permissions.md) | 权限、ACL、RBAC 与授权关系查询说明 |
+| [references/audit.md](./references/audit.md) | 登录、会话、命令、文件传输等审计说明 |
+| [references/diagnose.md](./references/diagnose.md) | 连通性、对象解析、访问分析、系统巡检与治理说明 |
+| [references/safety-rules.md](./references/safety-rules.md) | 查询边界、本地写入例外与阻塞规则 |
+| [references/troubleshooting.md](./references/troubleshooting.md) | 常见错误排查与恢复建议 |
 
 ## 不支持范围
 
-- 资产、平台、节点、账号、用户、用户组、组织的创建/更新/删除/解锁
-- 权限创建、更新、追加关系、移除关系、删除
-- 临时 SDK/HTTP 脚本绕过正式流程
+- 资产、平台、节点、账号、用户、用户组、组织的创建、更新、删除、解锁。
+- 权限创建、更新、追加关系、移除关系、删除。
+- 跳过预检直接执行业务动作。
+- 临时 SDK/HTTP 脚本绕过正式入口。
+- 报告类请求绕过 `jms_report.py` 正式入口，改用现场临时拼装逻辑。
+- 在对象不明确、组织不明确或跨组织场景下继续猜测执行。

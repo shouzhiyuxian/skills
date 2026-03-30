@@ -1,102 +1,127 @@
 ---
 name: jumpserver-skills
-description: Use for JumpServer V4 preflight, `.env.local` initialization, org selection, and read-only asset, permission, audit, and access queries through the bundled `jms_*.py` CLIs. Not for business mutations.
+description: JumpServer V4.10 查询与分析 skill。Use when users ask to query assets/accounts/users/organizations/permissions, inspect access or governance, audit logins/sessions/commands/file transfers, diagnose config or organization issues, or analyze JumpServer usage data for a specific day or time range such as 使用报告、日报、某天使用情况、某天登录/会话/命令/传输情况、usage report, daily usage report, usage analysis, or JumpServer usage overview.
 ---
 
 # JumpServer Skills
 
-JumpServer 查询型 skill：允许环境初始化写入（`.env.local` 与 `JMS_ORG_ID`），但不执行业务对象或权限的创建、更新、删除、追加或移除。
+只使用正式 CLI 入口：
 
-## Input / Output / 输入输出
+- `python3 scripts/jumpserver_api/jms_query.py ...`
+- `python3 scripts/jumpserver_api/jms_diagnose.py ...`
+- `python3 scripts/jumpserver_api/jms_report.py ...`
 
-| 类型 | 常见输入 | 返回 |
-|---|---|---|
-| 环境初始化 | `JMS_API_URL`、鉴权信息、可选 `org-id` | 配置完整性、`.env.local` 写入结果、连通性、组织写入结果 |
-| 对象查询 | `resource`、`id`、`name`、`filters` | 列表、详情、解析结果 |
-| 权限与审计 | `filters`、`audit-type`、时间范围、`command_storage_id` | 权限详情、审计详情、最近活动 |
-| 访问分析 | `username`、可选 `asset-name` | 用户可访问资产/节点、单资产访问视图 |
+这是查询与分析 skill。允许本地运行时写入 `config-write --confirm` 和 `select-org --confirm`。不执行 JumpServer 业务写操作。
 
-## Route / 路由流程
+## Route First
+
+按下面顺序判路由。上面的规则优先于下面的规则。
+
+1. 如果用户请求的核心对象是某一天或某一段时间内的 JumpServer 使用数据分析，优先命中 HTML 模板工作流。这包括：使用报告、日报、使用情况、使用分析、审计分析、某天发生了什么、分析 `20260310`、看下 / 看看 `3 月 10 号` 使用情况、帮我看 / 帮我看看某天登录/会话/命令/传输情况、想看上周谁登录最多、过一下 `3 月上旬` 哪些资产最活跃，以及类似的“时间范围内使用情况 / 概览 / 汇总 / 排行 / TOP”表达。
+动作：优先使用 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`，并由它加载 [template/bastion-daily-usage-template.html](template/bastion-daily-usage-template.html) 和 [references/metadata/daily_usage_report_template_fields.json](references/metadata/daily_usage_report_template_fields.json)；先把“昨天 / 20260310 / 3月10号 / 上周 / 本月”等时间表达归一化为明确时间窗，再生成并验证完整 HTML 报告；模板细节见 [references/report-template-playbook.md](references/report-template-playbook.md)。
+
+2. 如果用户要配置 JumpServer、检查依赖、检查配置、检查连通性、切换组织、查看许可证、系统设置、报表、工单、存储、终端或做对象解析，先走 `jms_diagnose.py`。
+动作：先预检，再用 `config-status` / `ping` / `select-org` / `inspect` / `resolve`。
+
+3. 如果用户要看授权规则、ACL、RBAC、为什么某人能访问某资产、某条权限详情，走 `jms_query.py`。
+动作：优先 `permission-list` / `permission-get` / `asset-perm-users`；必要时先用 `jms_diagnose.py` 做访问分析。
+
+4. 如果用户要查登录、会话、终端会话、命令记录、文件传输、异常行为、高危命令、失败登录、特权账号使用审计，走 `jms_query.py`。
+动作：优先 `audit-analyze --capability ...`，需要明细时再用 `audit-list` / `audit-get` / `terminal-sessions`。
+
+5. 如果用户要查资产、节点、平台、账号、账号模板、用户、用户组、组织、标签、网域等对象，走 `jms_query.py`。
+动作：只做 `object-list` / `object-get`；名称不唯一时先解析，不要猜。
+
+6. 如果用户要做治理巡检、聚合分析、账号治理、资产治理、访问分析、系统巡检或 capability 型统计，走 `jms_diagnose.py inspect --capability ...`。
+动作：优先 capability，不手工拼多条零散查询。
+
+普通路由细节、更多命中说法和反例见 [references/routing-playbook.md](references/routing-playbook.md)。
+
+## Template Overrides
+
+按下面顺序处理模板例外。上面的规则优先于下面的规则。
+
+1. 如果用户明确说“不要生成报告，直接分析”“先简单说下”“只给我结论”“不用模板”，才允许跳过模板，直接给简短分析。
+2. 除上述明确例外外，只要是某一天或某一段时间的 JumpServer 使用情况 / 使用分析 / 审计分析，或者表达为某时间段的登录 / 会话 / 命令 / 传输情况、排行、TOP、谁最多，就必须先走模板工作流。
+3. “分析”不等于自由文本优先。带时间范围的使用分析、情况概览或排行类问题，默认先产出完整 HTML 报告；摘要只能作为补充，不能替代报告。
+
+## Organization Priority
+
+按下面顺序处理组织。上面的规则优先于下面的规则。
+
+1. 用户显式给组织：按用户指定组织执行。
+2. 报告或使用分析模板请求且用户未指定组织，或明确指定“所有组织”“全局组织”：默认执行 `python3 scripts/jumpserver_api/jms_diagnose.py select-org --org-id 00000000-0000-0000-0000-000000000000 --confirm`。
+3. 全局组织 `00000000-0000-0000-0000-000000000000` 的可访问性不只看候选组织列表；允许通过显式 `select-org` / 直连探测确认。
+4. 如果全局组织 `00000000-0000-0000-0000-000000000000` 的直连探测或显式选择验证失败：直接阻塞并返回 `candidate_orgs`；不要回退到 `{0002}` / `{0002,0004}` 自动规则。
+5. 非报告类请求且未指定组织：沿用保留组织逻辑。只有可访问组织集合恰好是 `{0002}` 或 `{0002,0004}` 时，才自动写入 `0002`。
+6. 当前 `JMS_ORG_ID` 已不可访问：先重新 `select-org`，不要继续业务命令。
+7. 查询类请求在未确定组织且存在多个可访问组织时：先返回 `candidate_orgs` 并要求用户选择查询组织。
+8. 查询类请求在当前组织已生效且仍有其他可切换组织时：继续返回 `switchable_orgs`，提示用户还可以切换到哪些组织查询。
+
+## Standard Flow
+
+收到请求先做：
 
 ```text
-config-status --json
-  -> complete=false ? collect env info -> config-write --confirm
-  -> ping
-  -> org missing/inaccessible ? select-org [--org-id] -> select-org --confirm
-  -> read-only query
+自动检查依赖 -> config-status --json -> 必要时 config-write --confirm -> ping -> 按路由和组织优先级选择正式入口
 ```
 
-- 仅当可访问组织集合恰好是 `{0002}` 或 `{0002,0004}` 时，才允许自动写入 `0002`。
+执行规则：
 
-## Capability Matrix / 能力矩阵
+- 配置或环境不确定时，先执行 `python3 scripts/jumpserver_api/jms_diagnose.py config-status --json`。
+- `complete=false` 时，先补齐配置，再继续。
+- 名称不唯一、平台不明确、对象跨组织时，先解析或阻塞，不要猜。
+- 审计类问题没有 `date_from/date_to` 时，默认最近 7 天；想查更大范围时优先要求明确时间窗。
+- 模板化使用报告/使用分析请求必须先走 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；它会负责时间归一化、组织处理、字段元数据取数、模板填充和生成后自检。普通查询优先只选 1 个正式入口。
 
-| Intent | Must Use | Precheck | Output | Stop If |
-|---|---|---|---|---|
-| 初始化环境 | `jms_diagnose.py config-status/config-write/ping/select-org` | 无 | 配置状态、`.env.local` 写入结果、连通性、组织持久化结果 | 地址或鉴权缺失、地址不可达、组织不可访问 |
-| 查资产与对象 | `jms_assets.py list/get`、`jms_diagnose.py resolve/resolve-platform` | `config-status --json` -> 必要时 `config-write --confirm` -> `ping` -> 必要时 `select-org --confirm` | 资产类列表、详情、对象解析结果 | 名称不唯一、对象不清楚、组织未准备好 |
-| 查权限规则 | `jms_permissions.py list/get` | `config-status --json` -> 必要时 `config-write --confirm` -> `ping` -> 必要时 `select-org --confirm` | 权限列表、权限详情 | 组织未准备好 |
-| 查审计记录 | `jms_audit.py list/get` | `config-status --json` -> 必要时 `config-write --confirm` -> `ping` -> 必要时 `select-org --confirm` | 登录、操作、会话、命令审计 | `audit-type=command` 缺 `command_storage_id` |
-| 做访问分析 | `jms_diagnose.py user-assets/user-nodes/user-asset-access/recent-audit` | `config-status --json` -> 必要时 `config-write --confirm` -> `ping` -> 必要时 `select-org --confirm` | 用户可访问资产/节点、单资产访问、最近审计 | 用户不存在、候选过多、组织未准备好 |
+## Guardrails
 
-## Core Rules / 核心规则
+- 不生成临时 SDK Python 脚本或 HTTP 脚本。
+- 不猜对象 ID、平台 ID、组织、鉴权信息或筛选条件。
+- 不创建、更新、删除、解锁对象，也不追加或移除权限关系。
+- 权限问题只做读取和解释，不做权限写入。
+- 模板化报告请求必须优先使用 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；不要现场写临时拼装逻辑。若正式入口缺失，应先补齐正式入口，再使用它。
+- 模板化报告请求只使用字段元数据里声明的来源，不用 Markdown 模板替代 HTML 模板。
+- 模板化报告请求中的命令审计字段，未显式给 `command_storage_id` 时默认汇总全部可访问 command storage；普通命令审计查询仍沿用默认 storage / 单个 storage / 多 storage 阻塞逻辑。
 
-| Rule | Required Behavior |
-|---|---|
-| 预检顺序 | `config-status --json -> config-write --confirm（如需） -> ping -> select-org --confirm（如需） -> read-only query` |
-| 环境写入 | 允许通过 `config-write --confirm` 生成或更新 `.env.local` |
-| 组织写入 | 允许通过 `select-org --confirm` 持久化 `JMS_ORG_ID` |
-| 保留组织特判 | 可访问组织集合仅在 `{0002}` 或 `{0002,0004}` 时才自动写入 `0002` |
-| 范围边界 | 把这个 skill 当作查询型 skill，而不是通用运维执行器 |
-| 审计默认窗口 | `date_from/date_to` 省略时默认最近 7 天 |
-| 命令审计 | `audit-type=command` 时必须提供 `command_storage_id` |
-| 非支持动作 | 遇到 create/update/delete/append/remove/unblock 时直接说明“业务动作只保留查询” |
+## Respond With
 
-## Canonical Commands / 命令骨架
+成功时至少回显：
 
-配置检查与写入：
+- 已走预检
+- 选中的正式入口或模板路径
+- `effective_org`
+- `switchable_orgs`（当当前组织已生效且仍有其他可切换组织时）
+- 执行命令摘要
+- 普通查询：结果摘要
+- 模板报告：完整 HTML 报告，且已经通过生成后自检
 
-```bash
-python3 scripts/jms_diagnose.py config-status --json
-python3 scripts/jms_diagnose.py config-write --payload '{"JMS_API_URL":"https://jump.example.com","JMS_ACCESS_KEY_ID":"<ak>","JMS_ACCESS_KEY_SECRET":"<sk>","JMS_VERSION":"4"}' --confirm
-python3 scripts/jms_diagnose.py ping
-```
+模板报告成功时还至少回显：
 
-组织选择：
+- 正式入口：`python3 scripts/jumpserver_api/jms_report.py daily-usage ...`
+- 报告文件路径
+- 模板路径：`template/bastion-daily-usage-template.html`
+- 字段元数据路径：`references/metadata/daily_usage_report_template_fields.json`
+- `queried_command_storage_ids`
+- `queried_command_storage_count`
+- `report_date`
+- `date_from`
+- `date_to`
+- `validation_summary`
+- 可附加简短摘要，但不得仅返回摘要替代报告
 
-```bash
-python3 scripts/jms_diagnose.py select-org
-python3 scripts/jms_diagnose.py select-org --org-id <org-id>
-python3 scripts/jms_diagnose.py select-org --org-id <org-id> --confirm
-```
+阻塞时至少回显：
 
-对象查询：
+- 已走预检
+- `effective_org`
+- 阻塞原因
+- `candidate_orgs` 或 `candidate_objects`
+- 下一步安全动作
 
-```bash
-python3 scripts/jms_assets.py list --resource user --filters '{"username":"openclaw"}'
-python3 scripts/jms_assets.py get --resource asset --id <asset-id>
-python3 scripts/jms_diagnose.py resolve --resource node --name demo-node
-python3 scripts/jms_diagnose.py resolve-platform --value Linux
-```
+## References
 
-权限与审计查询：
-
-```bash
-python3 scripts/jms_permissions.py list --filters '{"limit":20}'
-python3 scripts/jms_permissions.py get --id <permission-id>
-python3 scripts/jms_audit.py list --audit-type operate --filters '{"limit":30}'
-python3 scripts/jms_audit.py get --audit-type command --id <command-id> --filters '{"command_storage_id":"<command-storage-id>"}'
-```
-
-## Success Criteria / 成功标准
-
-- 先完成或明确阻塞在 `config-status -> ping -> select-org` 预检链路上，不跳步。
-- 配置缺失时，能按字段收集用户回复并在确认后调用 `config-write --confirm`。
-- 组织缺失时，能先返回候选组织，再在确认后调用 `select-org --confirm`。
-- 查询请求走正式 `jms_*.py` 入口，返回结果或明确说明阻塞原因。
-- 对业务写操作直接拒绝，不绕过正式入口另写临时 SDK/HTTP 脚本。
-
-## Not For / 不适用
-
-- 不适用于资产、平台、节点、账号、用户、用户组、组织、权限的创建、更新、删除。
-- 不适用于追加关系、移除关系、解锁用户、改密、批量修改。
-- 不适用于临时 SDK/HTTP 脚本绕过正式入口。
+- [普通路由与阻塞规则](references/routing-playbook.md)
+- [报告模板工作流](references/report-template-playbook.md)
+- [运行入口与环境](references/runtime.md)
+- [诊断与访问分析](references/diagnose.md)
+- [安全规则](references/safety-rules.md)
