@@ -14,6 +14,7 @@ ensure_requirements_installed()
 import argparse
 
 from jumpserver_api.jms_analytics import (
+    _apply_common_filters,
     _asset_filter_evidence,
     _exact_first_filter,
     _fetch_terminal_session_records,
@@ -355,8 +356,23 @@ def _audit_list(args: argparse.Namespace):
     context = ensure_selected_org_context()
     client = create_client()
     filters = _normalize_time_filters(parse_json_arg(args.filters), default_days=7)
-    result = client.list_paginated(AUDIT_PATHS[args.audit_type], params=_server_filters(filters))
-    return {"audit_type": args.audit_type, "records": result, **org_context_output(context)}
+    filter_strategy = "server"
+    if args.audit_type == "terminal-session":
+        result, meta = _fetch_terminal_session_records(filters)
+        filter_strategy = meta.get("filter_strategy") or filter_strategy
+    else:
+        result = client.list_paginated(AUDIT_PATHS[args.audit_type], params=_server_filters(filters))
+        if isinstance(result, list):
+            filtered = _apply_common_filters([item for item in result if isinstance(item, dict)], filters)
+            if len(filtered) != len(result):
+                filter_strategy = "server+local_common_filters"
+            result = filtered
+    return {
+        "audit_type": args.audit_type,
+        "filter_strategy": filter_strategy,
+        "records": result,
+        **org_context_output(context),
+    }
 
 
 def _audit_get(args: argparse.Namespace):

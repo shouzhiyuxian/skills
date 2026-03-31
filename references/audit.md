@@ -41,6 +41,12 @@
 | `suspicious-operation-summary` | 跨命令、登录、会话、传输汇总可疑行为 |
 | `user-session-analysis` / `asset-session-analysis` | 从用户或资产维度分析会话行为 |
 
+某用户某天连接过哪些机器：
+
+- 先解析用户，再优先 `audit-analyze --capability session-record-query`
+- 返回时区分 `session_count` 与去重后的 `assets`
+- 不要先用 `audit-list --audit-type session` 作为“是否有会话”的唯一依据
+
 ## 高频示例
 
 最近操作日志：
@@ -63,6 +69,13 @@ python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type operate --fi
 python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type login --filters '{"limit":5}'
 python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view online
 python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view history --filters '{"limit":5}'
+```
+
+某用户某天连接过哪些机器：
+
+```bash
+python3 scripts/jumpserver_api/jms_diagnose.py resolve --resource user --name '齐经宇'
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filters '{"user":"齐经宇","date_from":"2026-03-23 00:00:00","date_to":"2026-03-23 23:59:59","limit":200}'
 ```
 
 高危命令审计：

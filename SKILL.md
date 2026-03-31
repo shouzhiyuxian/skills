@@ -31,7 +31,7 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 只有明确问“为什么 / 依据 / 授权规则 / 权限详情”时，才进入这一类。
 
 5. 如果用户要查登录、会话、终端会话、命令记录、文件传输、异常行为、高危命令、失败登录、特权账号使用审计，走 `jms_query.py`。
-动作：优先 `audit-analyze --capability ...`，需要明细时再用 `audit-list` / `audit-get` / `terminal-sessions`。
+动作：优先 `audit-analyze --capability ...`，需要明细时再用 `audit-list` / `audit-get` / `terminal-sessions`。如果问法是“某用户某天连接过哪些机器 / 某天会话数 / 某天连了几次”，先解析用户，再优先 `audit-analyze --capability session-record-query`；不要先用 `audit-list --audit-type session` 下结论。
 
 6. 如果用户要查资产、节点、平台、账号、账号模板、用户、用户组、组织、标签、网域等对象，走 `jms_query.py`。
 动作：只做 `object-list` / `object-get`；名称不唯一时先解析，不要猜。
@@ -78,6 +78,7 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 - 名称不唯一、平台不明确、对象跨组织时，先解析或阻塞，不要猜。
 - “某某用户在某组织下有哪些资产 / 节点 / 账号” 这类请求先解析组织，必要时执行 `select-org --org-id <org-id> --confirm`，再解析用户；对中文姓名等显示名，允许先解析用户对象，再用 `user-id` 执行 `user-assets` / `user-nodes` / `user-asset-access`。
 - 审计类问题没有 `date_from/date_to` 时，默认最近 7 天；想查更大范围时优先要求明确时间窗。
+- “某用户某天连接过哪些机器 / 某天会话数” 这类问题，优先返回两套口径：`session_count` 与去重后的 `assets`；机器列表用去重资产，不要把会话条数直接说成机器数。
 - 模板化使用报告/使用分析请求必须先走 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；它会负责时间归一化、组织处理、字段元数据取数、模板填充和生成后自检。普通查询优先只选 1 个正式入口。
 
 ## Guardrails
@@ -88,6 +89,9 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 - 权限问题只做读取和解释，不做权限写入。
 - 对“某某用户在某组织下有哪些资产”不要直接返回授权规则说明，也不要把“有哪些资产”自动翻译成“解释访问依据”。
 - 不要因为句子里带了“用户”二字就优先落到权限关系；结果型问法先返回有效访问范围结果。
+- 只有正式入口在精确时间窗和正确组织下实际返回 `0` 条时，才能说“没有记录”；不要因为单个入口没命中就下结论。
+- 未经验证，不要猜测“页面选错日期”“时区差异”“数据同步延迟”“数据未同步”等原因。
+- 页面总数与用户过滤结果不一致时，要明确区分“当天总会话数”和“该用户会话数”，不要混成一个数字。
 - 模板化报告请求必须优先使用 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；不要现场写临时拼装逻辑。若正式入口缺失，应先补齐正式入口，再使用它。
 - 模板化报告请求只使用字段元数据里声明的来源，不用 Markdown 模板替代 HTML 模板。
 - 模板化报告请求中的命令审计字段，未显式给 `command_storage_id` 时默认汇总全部可访问 command storage；普通命令审计查询仍沿用默认 storage / 单个 storage / 多 storage 阻塞逻辑。
