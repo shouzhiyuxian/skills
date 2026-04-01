@@ -17,8 +17,10 @@ from jumpserver_api.jms_analytics import (
     _apply_common_filters,
     _asset_filter_evidence,
     _exact_first_filter,
+    _extract_filter_diagnostics,
     _fetch_terminal_session_records,
     _normalize_time_filters,
+    _normalize_user_filter_payload,
     _resolve_asset,
     _resolve_user,
     _server_filters,
@@ -499,12 +501,13 @@ def _audit_list(args: argparse.Namespace):
             if len(filtered) != len(result):
                 filter_strategy = "server+local_common_filters"
             result = filtered
-    return {
+    payload = {
         "audit_type": args.audit_type,
         "filter_strategy": filter_strategy,
         "records": result,
         **org_context_output(context),
     }
+    return _attach_filter_diagnostics(payload, filters)
 
 
 def _audit_get(args: argparse.Namespace):
@@ -523,7 +526,7 @@ def _terminal_sessions(args: argparse.Namespace):
             filters.setdefault(key, value)
 
     filtered, meta = _fetch_terminal_session_records(filters)
-    return {
+    payload = {
         "audit_type": "terminal-session",
         "view": args.view or "all",
         "summary": {
@@ -541,6 +544,7 @@ def _terminal_sessions(args: argparse.Namespace):
         ],
         **org_context_output(context),
     }
+    return _attach_filter_diagnostics(payload, filters)
 
 
 def _command_storage_hint(args: argparse.Namespace):
@@ -561,21 +565,33 @@ def _command_storage_hint_payload(filters: dict, *, context: dict | None = None)
     }
 
 
+def _attach_filter_diagnostics(result: dict, filters: dict) -> dict:
+    diagnostics = _extract_filter_diagnostics(filters)
+    if not diagnostics:
+        return result
+    payload = dict(result)
+    payload.setdefault("filter_diagnostics", diagnostics)
+    return payload
+
+
 def _audit_analyze(args: argparse.Namespace):
     context = ensure_selected_org_context()
-    filters = parse_json_arg(args.filters)
+    filters = _normalize_user_filter_payload(parse_json_arg(args.filters))
     effective_filters = dict(filters)
     storage_context = None
     if args.capability in COMMAND_AUDIT_CAPABILITIES:
-        storage_context = resolve_command_storage_context(filters)
-        if not filters.get("command_storage_id"):
+        storage_context = resolve_command_storage_context(effective_filters)
+        if not effective_filters.get("command_storage_id"):
             if storage_context.get("selection_required"):
-                return {
-                    "blocked": True,
-                    "block_reason": "Multiple command storages detected and no default storage is available. Select one command_storage_id before querying command audit capabilities.",
-                    "capability": args.capability,
-                    **_command_storage_hint_payload(filters, context=context),
-                }
+                return _attach_filter_diagnostics(
+                    {
+                        "blocked": True,
+                        "block_reason": "Multiple command storages detected and no default storage is available. Select one command_storage_id before querying command audit capabilities.",
+                        "capability": args.capability,
+                        **_command_storage_hint_payload(effective_filters, context=context),
+                    },
+                    effective_filters,
+                )
             selected_command_storage_id = storage_context.get("selected_command_storage_id")
             if selected_command_storage_id:
                 effective_filters = {**filters, "command_storage_id": selected_command_storage_id}
@@ -584,7 +600,7 @@ def _audit_analyze(args: argparse.Namespace):
         result.update(storage_context)
     if "effective_org" not in result:
         result.update(org_context_output(context))
-    return result
+    return _attach_filter_diagnostics(result, effective_filters)
 
 
 def _audit_capabilities(_: argparse.Namespace):

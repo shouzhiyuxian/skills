@@ -130,6 +130,12 @@ Time expressions are normalized into explicit time windows first:
 - "last week" -> previous natural week, Monday `00:00:00 ~ Sunday 23:59:59`
 - "this month" -> the first day of the current month `00:00:00` to the current date or month end `23:59:59`
 
+Quick reading guide:
+
+- `a specific day` is only a placeholder concept; users can say `yesterday`, `20260310`, `2026-03-10`, `2026/03/10`, or `March 10`.
+- `a time range` is also a placeholder concept; users can say `last week`, `this month`, or a concrete range such as `2026-03-10 to 2026-03-24`.
+- Natural-language time expressions are normalized first, and the formal entrypoint ultimately uses `--date`, `--period`, or `--date-from/--date-to`.
+
 Reports are always written to `reports/JumpServer-YYYY-MM-DD.html`. If the request includes command-audit fields, the report applies the predefined command-storage aggregation rules automatically, so users do not need to choose internal collection logic manually.
 
 ## Organization Selection and Blocking Rules

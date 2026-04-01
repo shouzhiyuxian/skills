@@ -188,6 +188,10 @@ def _extract_user(item: dict[str, Any]) -> str:
     )
 
 
+def _extract_user_id(item: dict[str, Any]) -> str:
+    return _extract_identifier(item, "user_id", "user.id")
+
+
 def _extract_asset(item: dict[str, Any]) -> str:
     return _simplify_display_name(
         _extract_identifier(
@@ -403,8 +407,42 @@ def _match_time(record_time: datetime | None, filters: dict[str, Any]) -> bool:
     return True
 
 
-def _normalize_time_filters(filters: dict[str, Any], *, default_days: int = 7) -> dict[str, Any]:
+def _normalize_user_filter_payload(filters: dict[str, Any]) -> dict[str, Any]:
     payload = dict(filters)
+    diagnostics = dict(payload.get("_filter_diagnostics") or {})
+    if isinstance(diagnostics.get("user_filter_normalization"), dict):
+        return payload
+
+    requested_user = str(payload.get("user") or "").strip()
+    requested_user_id = str(payload.get("user_id") or "").strip()
+    if not requested_user and not requested_user_id:
+        return payload
+
+    normalization = {
+        "applied": False,
+        "strategy": None,
+        "requested_user": requested_user or None,
+        "requested_user_id": requested_user_id or None,
+        "effective_user_id": requested_user_id or None,
+    }
+    if requested_user and is_uuid_like(requested_user) and not requested_user_id:
+        payload["user_id"] = requested_user
+        normalization["applied"] = True
+        normalization["strategy"] = "user_uuid_promoted_to_user_id"
+        normalization["effective_user_id"] = requested_user
+
+    diagnostics["user_filter_normalization"] = normalization
+    payload["_filter_diagnostics"] = diagnostics
+    return payload
+
+
+def _extract_filter_diagnostics(filters: dict[str, Any] | None) -> dict[str, Any] | None:
+    diagnostics = (filters or {}).get("_filter_diagnostics")
+    return dict(diagnostics) if isinstance(diagnostics, dict) and diagnostics else None
+
+
+def _normalize_time_filters(filters: dict[str, Any], *, default_days: int = 7) -> dict[str, Any]:
+    payload = _normalize_user_filter_payload(filters)
     now = datetime.now(timezone.utc)
     date_from = payload.get("date_from")
     date_to = payload.get("date_to")
@@ -487,7 +525,11 @@ def _apply_common_filters(items: list[dict[str, Any]], filters: dict[str, Any]) 
         timestamp = _extract_datetime(item)
         if not _match_time(timestamp, filters):
             continue
-        if filters.get("user") and not _match_text(_extract_user(item), filters["user"]):
+        requested_user_id = str(filters.get("user_id") or "").strip()
+        if requested_user_id and _extract_user_id(item) != requested_user_id:
+            continue
+        requested_user = str(filters.get("user") or "").strip()
+        if requested_user and not is_uuid_like(requested_user) and not _match_text(_extract_user(item), requested_user):
             continue
         if filters.get("asset") and not _match_asset_filter(item, filters["asset"]):
             continue

@@ -17,7 +17,7 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 
 按下面顺序判路由。上面的规则优先于下面的规则。
 
-1. 如果用户请求的核心对象是某一天或某一段时间内的 JumpServer 使用数据分析，优先命中 HTML 模板工作流。这包括：使用报告、日报、使用情况、使用分析、审计分析、某天发生了什么、分析 `20260310`、看下 / 看看 `3 月 10 号` 使用情况、帮我看 / 帮我看看某天登录/会话/命令/传输情况、想看上周谁登录最多、过一下 `3 月上旬` 哪些资产最活跃，以及类似的“时间范围内使用情况 / 概览 / 汇总 / 排行 / TOP”表达。
+1. 如果用户请求的核心对象是某一天或某一段时间内的 JumpServer 使用数据分析，优先命中 HTML 模板工作流。这包括：使用报告、日报、使用情况、使用分析、审计分析、某天发生了什么、分析 `20260310`、看下 / 看看 `3 月 10 号` 使用情况、帮我看 / 帮我看看某天登录/会话/命令/传输情况、想看上周谁登录最多、过一下 `3 月上旬` 哪些资产最活跃、帮我分析下某天堡垒机器的使用情况、帮我分析下某时间段的堡垒机器使用情况、帮我分析下 `20260310` 的堡垒机使用情况、帮我分析下 `3月10号` 的堡垒机器使用情况、帮我分析下 `2026-03-10到2026-03-24` 的堡垒机使用情况、帮我分析下 `上周` 的堡垒机使用情况，以及类似的“时间范围内使用情况 / 概览 / 汇总 / 排行 / TOP”表达。
 动作：优先使用 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`，并由它加载 [template/bastion-daily-usage-template.html](template/bastion-daily-usage-template.html) 和 [references/metadata/daily_usage_report_template_fields.json](references/metadata/daily_usage_report_template_fields.json)；先把“昨天 / 20260310 / 3月10号 / 上周 / 本月”等时间表达归一化为明确时间窗，再生成并验证完整 HTML 报告；模板细节见 [references/report-template-playbook.md](references/report-template-playbook.md)。
 
 2. 如果用户要配置 JumpServer、检查依赖、检查配置、检查连通性、切换组织、查看许可证、系统设置、报表、工单、存储、终端或做对象解析，先走 `jms_diagnose.py`。
@@ -48,6 +48,7 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 1. 如果用户明确说“不要生成报告，直接分析”“先简单说下”“只给我结论”“不用模板”，才允许跳过模板，直接给简短分析。
 2. 除上述明确例外外，只要是某一天或某一段时间的 JumpServer 使用情况 / 使用分析 / 审计分析，或者表达为某时间段的登录 / 会话 / 命令 / 传输情况、排行、TOP、谁最多，就必须先走模板工作流。
 3. “分析”不等于自由文本优先。带时间范围的使用分析、情况概览或排行类问题，默认先产出完整 HTML 报告；摘要只能作为补充，不能替代报告。
+4. 只要 `daily-usage` 成功返回，就必须先告诉用户“报告已生成”，并回显报告文件路径、文件存在性/大小、模板路径、元数据路径、时间范围、组织和 `validation_summary`；不允许后台生成 HTML 却只给文字摘要。
 
 ## Organization Priority
 
@@ -78,7 +79,7 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 - 名称不唯一、平台不明确、对象跨组织时，先解析或阻塞，不要猜。
 - “某某用户在某组织下有哪些资产 / 节点 / 账号” 这类请求先解析组织；优先直接使用 `--org-id` / `--org-name` 在单次命令内限定组织，不要求先写回 `.env`。对中文姓名等显示名，允许先解析用户对象，再用 `user-id` 执行 `user-assets` / `user-nodes` / `user-asset-access`。
 - 审计类问题没有 `date_from/date_to` 时，默认最近 7 天；想查更大范围时优先要求明确时间窗。
-- “某用户某天连接过哪些机器 / 某天会话数” 这类问题，优先返回两套口径：`session_count` 与去重后的 `assets`；机器列表用去重资产，不要把会话条数直接说成机器数。
+- “某用户某天连接过哪些机器 / 某天会话数” 这类问题，优先返回两套口径：`session_count` 与去重后的 `assets`；机器列表用去重资产，不要把会话条数直接说成机器数。若先解析了用户对象，解析出的 UUID 要放进 `filters.user_id`，不要回写到 `filters.user`。
 - 模板化使用报告/使用分析请求必须先走 `python3 scripts/jumpserver_api/jms_report.py daily-usage ...`；它会负责时间归一化、组织处理、字段元数据取数、模板填充和生成后自检。普通查询优先只选 1 个正式入口。
 
 ## Guardrails
@@ -111,8 +112,10 @@ description: JumpServer V4.10 查询与分析 skill。Use when users ask to quer
 
 模板报告成功时还至少回显：
 
+- 明确说明“报告已生成”
 - 正式入口：`python3 scripts/jumpserver_api/jms_report.py daily-usage ...`
 - 报告文件路径
+- 文件存在性与大小：`output_exists`、`output_size_bytes`、`output_size_human`
 - 模板路径：`template/bastion-daily-usage-template.html`
 - 字段元数据路径：`references/metadata/daily_usage_report_template_fields.json`
 - `queried_command_storage_ids`

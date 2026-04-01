@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import date, datetime, timedelta
 from html import escape
 import json
@@ -63,6 +63,22 @@ else:
 TEXT_CONTRACT = "text"
 TBODY_ROWS_CONTRACT = "tbody_rows"
 REQUIRED_KEY_FIELDS = ("login_total", "login_failed", "session_total", "risk_event_total")
+REPORT_RUNTIME_REQUIRED_FIELDS = (
+    "output_path",
+    "output_exists",
+    "output_size_bytes",
+    "output_size_human",
+    "template_path",
+    "metadata_path",
+    "effective_org",
+    "switchable_orgs",
+    "queried_command_storage_ids",
+    "queried_command_storage_count",
+    "report_date",
+    "date_from",
+    "date_to",
+    "validation_summary",
+)
 SESSION_ERROR_REASON_LABEL_MAP = {
     "Connect failed": "连接失败",
     "connect_failed": "连接失败",
@@ -96,6 +112,36 @@ def load_report_template() -> str:
 def _default_report_output_path(report_date: str) -> Path:
     date_token = str(report_date or "").strip() or _local_now().date().isoformat()
     return SKILL_DIR / "reports" / ("JumpServer-%s.html" % date_token)
+
+
+def _format_output_size_human(size_bytes: int) -> str:
+    size = float(max(int(size_bytes or 0), 0))
+    if size < 1024:
+        return "%d B" % int(size)
+    for unit in ("KB", "MB", "GB", "TB", "PB"):
+        size /= 1024.0
+        if size < 1024.0 or unit == "PB":
+            return "%.1f %s" % (size, unit)
+    return "%.1f PB" % size
+
+
+def _collect_report_artifact_metadata(output_path: Path) -> dict[str, Any]:
+    try:
+        output_exists = output_path.exists() and output_path.is_file()
+    except OSError:
+        output_exists = False
+    output_size_bytes = 0
+    if output_exists:
+        try:
+            output_size_bytes = int(output_path.stat().st_size or 0)
+        except OSError:
+            output_exists = False
+            output_size_bytes = 0
+    return {
+        "output_exists": output_exists,
+        "output_size_bytes": output_size_bytes,
+        "output_size_human": _format_output_size_human(output_size_bytes),
+    }
 
 
 def extract_template_fields(template_html: str) -> list[str]:
@@ -1034,6 +1080,97 @@ def validate_report_contract(
     }
 
 
+def validate_report_runtime_result(payload: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload or {})
+    failures: list[str] = []
+    missing_fields = [field for field in REPORT_RUNTIME_REQUIRED_FIELDS if field not in result]
+    if missing_fields:
+        failures.append("Runtime report payload is missing fields: %s" % ", ".join(sorted(missing_fields)))
+
+    for key in ("template_path", "metadata_path", "report_date", "date_from", "date_to"):
+        if key in result and not str(result.get(key) or "").strip():
+            failures.append("Runtime report field %s is empty." % key)
+
+    effective_org = result.get("effective_org")
+    if not isinstance(effective_org, dict) or not str(effective_org.get("id") or "").strip():
+        failures.append("effective_org must contain a non-empty id.")
+
+    switchable_orgs = result.get("switchable_orgs")
+    if not isinstance(switchable_orgs, list):
+        failures.append("switchable_orgs must be a list.")
+
+    queried_command_storage_ids = result.get("queried_command_storage_ids")
+    if not isinstance(queried_command_storage_ids, list):
+        failures.append("queried_command_storage_ids must be a list.")
+
+    queried_command_storage_count = result.get("queried_command_storage_count")
+    try:
+        queried_command_storage_count_value = int(queried_command_storage_count)
+    except (TypeError, ValueError):
+        failures.append("queried_command_storage_count must be an integer.")
+    else:
+        if queried_command_storage_count_value < 0:
+            failures.append("queried_command_storage_count must not be negative.")
+
+    validation_summary = result.get("validation_summary")
+    if not isinstance(validation_summary, dict):
+        failures.append("validation_summary must be a dict.")
+    elif not validation_summary.get("passed"):
+        failures.append("validation_summary.passed must be true for successful report generation.")
+
+    output_path_text = str(result.get("output_path") or "").strip()
+    if not output_path_text:
+        failures.append("output_path is empty.")
+        return {
+            "contract_passed": not failures,
+            "failure_count": len(failures),
+            "contract_failures": failures,
+        }
+
+    output_path = Path(output_path_text)
+    actual_exists = False
+    actual_size_bytes = 0
+    try:
+        actual_exists = output_path.exists() and output_path.is_file()
+    except OSError:
+        actual_exists = False
+    if not actual_exists:
+        failures.append("Report output artifact does not exist: %s" % output_path_text)
+    else:
+        try:
+            actual_size_bytes = int(output_path.stat().st_size or 0)
+        except OSError as exc:
+            failures.append("Report output artifact could not be stat'ed: %s" % exc)
+        else:
+            if actual_size_bytes <= 0:
+                failures.append("Report output artifact is empty: %s" % output_path_text)
+
+    if bool(result.get("output_exists")) != actual_exists:
+        failures.append("output_exists does not match filesystem state.")
+
+    try:
+        output_size_bytes = int(result.get("output_size_bytes"))
+    except (TypeError, ValueError):
+        failures.append("output_size_bytes must be an integer.")
+        output_size_bytes = None
+    if output_size_bytes is not None and output_size_bytes < 0:
+        failures.append("output_size_bytes must not be negative.")
+    if actual_exists and output_size_bytes is not None and output_size_bytes != actual_size_bytes:
+        failures.append("output_size_bytes does not match filesystem state.")
+
+    output_size_human = str(result.get("output_size_human") or "").strip()
+    if not output_size_human:
+        failures.append("output_size_human is empty.")
+    elif actual_exists and output_size_human != _format_output_size_human(actual_size_bytes):
+        failures.append("output_size_human does not match filesystem state.")
+
+    return {
+        "contract_passed": not failures,
+        "failure_count": len(failures),
+        "contract_failures": failures,
+    }
+
+
 def _validate_report_output(
     *,
     rendered_html: str,
@@ -1166,7 +1303,7 @@ def build_daily_usage_report(
     os.replace(temp_name, output)
 
     command_source = source_payloads.get("capability:command-record-query", {})
-    return {
+    result = {
         "output_path": str(output),
         "template_path": str(REPORT_TEMPLATE_PATH.relative_to(SKILL_DIR)),
         "metadata_path": str(REPORT_METADATA_PATH.relative_to(SKILL_DIR)),
@@ -1179,3 +1316,13 @@ def build_daily_usage_report(
         "date_to": context["runtime_context"]["date_to"],
         "validation_summary": validation,
     }
+    result.update(_collect_report_artifact_metadata(output))
+    runtime_contract = validate_report_runtime_result(result)
+    if not runtime_contract.get("contract_passed"):
+        with suppress(OSError):
+            output.unlink()
+        raise CLIError(
+            "Report generation finished but runtime artifact validation failed.",
+            payload=runtime_contract,
+        )
+    return result

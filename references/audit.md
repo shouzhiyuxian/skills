@@ -44,6 +44,7 @@
 某用户某天连接过哪些机器：
 
 - 先解析用户，再优先 `audit-analyze --capability session-record-query`
+- 若用户已经被解析成 UUID，固定传 `filters.user_id`；`filters.user` 只保留显示名或用户名文本
 - 返回时区分 `session_count` 与去重后的 `assets`
 - 不要先用 `audit-list --audit-type session` 作为“是否有会话”的唯一依据
 
@@ -76,6 +77,7 @@ python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view history --f
 ```bash
 python3 scripts/jumpserver_api/jms_diagnose.py resolve --resource user --name '齐经宇'
 python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filters '{"user":"齐经宇","date_from":"2026-03-23 00:00:00","date_to":"2026-03-23 23:59:59","limit":200}'
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filters '{"user_id":"a5b4f7a3-07a5-4946-a538-231f06a3852f","date_from":"2026-03-23 00:00:00","date_to":"2026-03-23 23:59:59","limit":200}'
 ```
 
 高危命令审计：
