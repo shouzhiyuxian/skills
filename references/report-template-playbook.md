@@ -133,6 +133,8 @@ python3 scripts/jumpserver_api/jms_report.py daily-usage \
 
 ## 输出要求
 
+正式入口返回的 JSON key 保持英文契约；对最终用户回显时，优先使用中文标签，必要时再在括号里补原字段名，例如 `生效组织（effective_org）`、`校验摘要（validation_summary）`。
+
 成功时至少包含：
 
 - 完整 HTML 报告
@@ -142,14 +144,14 @@ python3 scripts/jumpserver_api/jms_report.py daily-usage \
 - 文件存在性与大小：`output_exists`、`output_size_bytes`、`output_size_human`
 - 模板路径：`template/bastion-daily-usage-template.html`
 - 字段元数据路径：`references/metadata/daily_usage_report_template_fields.json`
-- `effective_org`
-- `switchable_orgs`（当当前组织已生效且仍有其他可切换组织时）
-- `queried_command_storage_ids`
-- `queried_command_storage_count`
-- `report_date`
-- `date_from`
-- `date_to`
-- `validation_summary`
+- 生效组织（`effective_org`）
+- 可切换组织（`switchable_orgs`，当当前组织已生效且仍有其他可切换组织时）
+- 已查询命令存储 ID 列表（`queried_command_storage_ids`）
+- 已查询命令存储数量（`queried_command_storage_count`）
+- 报告日期（`report_date`）
+- 开始时间（`date_from`）
+- 结束时间（`date_to`）
+- 校验摘要（`validation_summary`）
 - 执行命令摘要
 - 可附加简短摘要，但不得仅返回摘要替代报告
 

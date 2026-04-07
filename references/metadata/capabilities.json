@@ -27,8 +27,7 @@
       "date_to",
       "command_storage_scope",
       "command_storage_id",
-      "risk_level",
-      "limit"
+      "risk_level"
     ],
     "summary_strategy": "按时间线输出命令明细，补充高危命令计数、涉及用户/资产、风险级别分布。",
     "error_handling": "无数据时明确返回空结果；字段缺失时降级展示已知字段；普通查询在多 storage 且无默认 storage 时要求显式指定 command_storage_id；当 command_storage_scope=all 时汇总全部可访问 storage。",
@@ -61,8 +60,7 @@
       "protocol",
       "status",
       "date_from",
-      "date_to",
-      "limit"
+      "date_to"
     ],
     "summary_strategy": "返回会话总数、异常会话数、平均时长，并保留最近会话样本。",
     "error_handling": "当 terminal 详情接口不可用时，自动回退为审计会话数据。",
@@ -93,8 +91,7 @@
       "asset",
       "direction",
       "date_from",
-      "date_to",
-      "limit"
+      "date_to"
     ],
     "summary_strategy": "按方向、用户、资产聚合传输次数，并保留最新明细样本。",
     "error_handling": "方向字段缺失时自动按上传/下载候选字段尝试识别。",
@@ -285,7 +282,6 @@
       "date_from",
       "date_to",
       "days",
-      "limit",
       "top"
     ],
     "summary_strategy": "按特权账号聚合 usage_count、command_count、session_count、last_seen，并返回有活动账号排行。",
@@ -464,8 +460,7 @@
     ],
     "input_params": [
       "name",
-      "is_active",
-      "limit"
+      "is_active"
     ],
     "summary_strategy": "按模板输出数量、关联资产数、节点数与状态摘要。",
     "error_handling": "接口字段差异时保留原始模板对象供后续扩展。",
@@ -556,8 +551,7 @@
       "address",
       "node",
       "platform",
-      "is_active",
-      "limit"
+      "is_active"
     ],
     "summary_strategy": "返回资产总数、类型分布、启用状态和最近样本。",
     "error_handling": "大结果集默认摘要 Top 与样本，不直接回显全量。",
@@ -583,7 +577,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
       "name",
       "address"
     ],
@@ -613,8 +606,7 @@
     ],
     "input_params": [
       "asset",
-      "asset_type",
-      "limit"
+      "asset_type"
     ],
     "summary_strategy": "返回未绑定模板资产清单和按类型/节点的分布。",
     "error_handling": "模板关联字段未明确时标记为待确认并返回已识别线索。",
@@ -641,8 +633,7 @@
     ],
     "input_params": [
       "name",
-      "node",
-      "limit"
+      "node"
     ],
     "summary_strategy": "按重复名称分组输出冲突资产和节点分布。",
     "error_handling": "名称字段缺失时忽略该资产并计入 missing_name 统计。",
@@ -701,8 +692,7 @@
     "input_params": [
       "node",
       "name",
-      "platform",
-      "limit"
+      "platform"
     ],
     "summary_strategy": "按节点输出 asset_count 和样本资产列表。",
     "error_handling": "节点字段缺失时只统计可识别节点，不伪造节点关系。",
@@ -731,8 +721,7 @@
       "account",
       "asset",
       "privileged",
-      "is_active",
-      "limit"
+      "is_active"
     ],
     "summary_strategy": "返回 total_accounts、privileged_accounts、distinct_assets，并保留账号/资产/模板/source 样本字段。",
     "error_handling": "账号 inventory 接口不支持部分服务端筛选时，先拉取清单再在本地执行 account/asset/privileged/is_active 过滤，避免直接报错。",
@@ -758,8 +747,7 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "user",
-      "limit"
+      "user"
     ],
     "summary_strategy": "输出 total_expired_accounts、scope、date_expired、last_login、source 等失效线索。",
     "error_handling": "资产账号失效字段在 inventory 中未统一明确时，当前固定返回 scope=jumpserver_user_accounts，避免把用户账号结果误解为资产账号。",
@@ -790,8 +778,7 @@
       "days",
       "account",
       "asset",
-      "privileged",
-      "limit"
+      "privileged"
     ],
     "summary_strategy": "输出 total_unused_accounts、never_seen_count，以及账号维度的 usage_count、last_seen、never_seen 和所属资产。",
     "error_handling": "无使用记录时标记 never_seen=true；命令和会话任一侧缺失时仍保留账号基础属性与零使用计数供治理复核。",
@@ -820,7 +807,6 @@
       "account",
       "asset",
       "days",
-      "limit",
       "top"
     ],
     "summary_strategy": "返回 total_high_privilege_accounts、accounts_with_activity、asset_distribution，以及每个账号的 usage_count 和 last_seen。",
@@ -848,8 +834,7 @@
     ],
     "input_params": [
       "account",
-      "asset",
-      "limit"
+      "asset"
     ],
     "summary_strategy": "返回 total_accounts_without_template，并为每条记录补充 template、source、source_id、judgement_reason 供治理复核。",
     "error_handling": "模板字段缺失时按 source/source_id/template 候选字段综合判断；若 source 表明模板型来源则跳过该记录，避免误报。",
@@ -878,7 +863,6 @@
     "input_params": [
       "account",
       "asset",
-      "limit",
       "top"
     ],
     "summary_strategy": "返回 total_bindings、distinct_accounts、distinct_assets，以及 bindings_by_account/bindings_by_asset 聚合摘要。",
@@ -1143,8 +1127,7 @@
     ],
     "input_params": [
       "status",
-      "type",
-      "limit"
+      "type"
     ],
     "summary_strategy": "返回工单流数量、待审批数量和审批级别摘要。",
     "error_handling": "字段未明确时按 approval_step/approval_level 候选键提取。",
@@ -1173,7 +1156,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
       "status"
     ],
     "summary_strategy": "按终端、端点规则、存储组件输出数量与默认配置摘要。",
@@ -1202,8 +1184,7 @@
     ],
     "input_params": [
       "org_id",
-      "node",
-      "limit"
+      "node"
     ],
     "summary_strategy": "按组织输出资源统计字段，并补充节点数量分布。",
     "error_handling": "节点统计失败时保留组织统计，不把整体结果判为失败。",
@@ -1232,8 +1213,7 @@
     ],
     "input_params": [
       "role",
-      "user",
-      "limit"
+      "user"
     ],
     "summary_strategy": "输出角色绑定数量、绑定主体样本和角色分类分布。",
     "error_handling": "RBAC 接口字段差异时保留原始记录和可识别键名。",
@@ -1350,8 +1330,7 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "days",
-      "limit"
+      "days"
     ],
     "summary_strategy": "输出 usage_count 为 0 或极低的资产清单。",
     "error_handling": "当时间窗内无访问时明确说明按当前时间窗统计。",
@@ -1468,7 +1447,6 @@
     ],
     "input_params": [
       "days",
-      "limit",
       "asset"
     ],
     "summary_strategy": "返回 usage_count=0 的资产及其基本属性。",
@@ -1498,7 +1476,6 @@
     ],
     "input_params": [
       "days",
-      "limit",
       "asset_type"
     ],
     "summary_strategy": "返回 usage_count 为 0 的资产清单和基础分布。",
@@ -1562,7 +1539,6 @@
       "days",
       "account",
       "asset",
-      "limit",
       "top"
     ],
     "summary_strategy": "输出 total_high_privilege_accounts、active_accounts、top_accounts，以及每个特权账号的 usage_count、command_count、session_count、last_seen。",
@@ -1702,7 +1678,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
       "name"
     ],
     "summary_strategy": "返回平台数量和样本平台配置。",
@@ -1729,7 +1704,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
       "name",
       "is_active"
     ],
@@ -1758,7 +1732,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
       "platform",
       "asset"
     ],
@@ -1836,9 +1809,7 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "status",
-      "limit",
-      "offset"
+      "status"
     ],
     "summary_strategy": "返回工单数量和工单样本列表。",
     "error_handling": "无工单时返回空列表；过滤条件原样透传给服务端。",
@@ -1863,10 +1834,7 @@
       "scripts/jumpserver_api/jms_diagnose.py",
       "scripts/jumpserver_api/jms_analytics.py"
     ],
-    "input_params": [
-      "limit",
-      "offset"
-    ],
+    "input_params": [],
     "summary_strategy": "返回命令存储数量、默认存储数量与样本配置。",
     "error_handling": "多存储场景不做隐式选择，只返回事实结果供用户确认。",
     "coverage": "专项能力"
@@ -1890,10 +1858,7 @@
       "scripts/jumpserver_api/jms_diagnose.py",
       "scripts/jumpserver_api/jms_analytics.py"
     ],
-    "input_params": [
-      "limit",
-      "offset"
-    ],
+    "input_params": [],
     "summary_strategy": "返回录像存储数量、默认存储数量与样本配置。",
     "error_handling": "多存储场景不做隐式选择，只返回事实结果供用户确认。",
     "coverage": "专项能力"
@@ -1917,10 +1882,7 @@
       "scripts/jumpserver_api/jms_diagnose.py",
       "scripts/jumpserver_api/jms_analytics.py"
     ],
-    "input_params": [
-      "limit",
-      "offset"
-    ],
+    "input_params": [],
     "summary_strategy": "返回终端组件数量和组件样本。",
     "error_handling": "结果过大时只回显样本，不丢失总数。",
     "coverage": "专项能力"
@@ -1988,8 +1950,6 @@
       "scripts/jumpserver_api/jms_analytics.py"
     ],
     "input_params": [
-      "limit",
-      "offset",
       "days",
       "asset",
       "node"

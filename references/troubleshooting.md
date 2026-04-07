@@ -4,7 +4,7 @@
 
 - 优先按“判断当前是首次全量还是后续轻量 -> 环境 -> 连通性 -> 组织 -> 对象解析 -> 能力查询”的顺序排查。
 - 环境与入口问题看 [runtime.md](runtime.md)；资源与标准流程看 [assets.md](assets.md)；治理和调查能力看 [capabilities.md](capabilities.md)。
-- 所有正式入口都在 `scripts/jumpserver_api/` 下，不使用 SDK 临时脚本路径。
+- 所有正式入口都在 `scripts/jumpserver_api/` 下，不使用 SDK 临时脚本路径；这些路径默认以 skill 根目录为当前工作目录。
 - 遇到阻塞或参数错误时，优先看返回里的 `reason_code`、`user_message`、`action_hint`、`suggested_commands`，不要只盯顶层 `error`。
 
 ## 报错速查
@@ -21,7 +21,15 @@
 | `无法解析 --filter 参数。` | `--filter` 不是 `key=value` 形式 | 改成 `--filter name=Default` 这种写法 |
 | `Asset permission API is unavailable or not yet confirmed ...` | 当前环境未开放权限接口，或权限不足 | 记录为接口待确认，先做替代性只读验证 |
 | `object_does_not_exist` / `404` | ID 错误、组织错误或对象不存在 | 先重新 `list/get/resolve` |
+| `python3: can't open file 'scripts/jumpserver_api/...': [Errno 2] No such file or directory` | 当前工作目录不在 skill 根目录，或调用方使用了错误的相对路径 | 先执行 `pwd` 确认 cwd；若不在 skill 根目录，先切换到 skill 根目录再重试，或改用仓库相对路径 |
 | “帮我创建/更新/删除/解锁/授权” 被拒绝 | 本仓库不提供对象或权限写操作 | 说明边界，并回到只读查询或能力分析路径 |
+
+## 统计误判与执行上下文
+
+- 登录、会话等正式入口返回 JSON 时，固定按 `ok -> result -> summary / records` 的顺序读取；不要猜顶层 `results` 或把临时打印结构当成正式契约。
+- 只要返回里已有 `summary.total` 或同类总量字段，就优先引用它；`records` 主要用于明细、去重和逐条解释，不用于替代总量。
+- 终端输出被截断、长 JSON 只显示部分 `records`、或日志查看器只露出前几百行时，不能据此估算总量。
+- 如果命令报找不到 `scripts/jumpserver_api/...`，先排查 cwd 是否在 skill 根目录；这属于执行上下文问题，不要直接归因为“仓库路径写错”。
 
 ## 轻量失败后的升级动作
 

@@ -55,7 +55,7 @@ You do not need to remember specific execution commands. This skill performs pre
 
 If you want to run the formal entrypoints manually, use parameters in this order:
 
-1. Prefer explicit arguments such as `--org-name`, `--name`, `--days`, `--user`, and `--limit`
+1. Prefer explicit arguments such as `--org-name`, `--name`, `--days`, and `--user`
 2. Use repeated `--filter key=value` only for a few advanced fields
 3. Keep `--filters '{"key":"value"}'` only for backward compatibility
 
@@ -63,19 +63,21 @@ Recommended style:
 
 ```bash
 python3 scripts/jumpserver_api/jms_diagnose.py select-org --org-name Default
-python3 scripts/jumpserver_api/jms_diagnose.py user-assets --org-name Default --username gusiqing
-python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default --limit 5
-python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user gusiqing --limit 20
-python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10 --limit 10
+python3 scripts/jumpserver_api/jms_diagnose.py user-assets --org-name Default --username example.user
+python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user example.user
+python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10
 python3 scripts/jumpserver_api/jms_diagnose.py reports --report-type account-statistic --days 30
 ```
 
 Compatibility style:
 
 ```bash
-python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --filters '{"name":"Default","limit":5}'
-python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filter user=gusiqing --filter days=7 --filter limit=20
+python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --filters '{"name":"Default"}'
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filter user=example.user --filter days=7
 ```
+
+List and analysis commands now auto-paginate and return the full result set for the requested range, so `--limit/--offset` are no longer supported.
 
 ## Environment Variables
 

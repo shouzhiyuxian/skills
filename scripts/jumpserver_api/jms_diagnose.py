@@ -12,6 +12,7 @@ from jumpserver_api.jms_bootstrap import ensure_requirements_installed
 ensure_requirements_installed()
 
 import argparse
+import sys
 
 from jumpserver_api.jms_analytics import (
     _apply_common_filters,
@@ -28,11 +29,14 @@ from jumpserver_api.jms_analytics import (
     _fetch_command_records,
     _fetch_session_records,
     _login_records,
+    _normalize_login_audit_filters,
+    _normalize_operate_audit_filters,
+    _normalize_terminal_session_filters,
+    _normalize_ticket_filters,
     _normalize_time_filters,
     _operate_audit_server_filters,
     _resolve_asset,
     _resolve_user,
-    _server_filters,
     build_node_lookup,
     explain_asset_permissions,
     match_permission_to_asset,
@@ -60,6 +64,7 @@ from jumpserver_api.jms_runtime import (
     require_confirmation,
     resolve_effective_org_context,
     resolve_platform_reference,
+    reject_deprecated_pagination_cli_args,
     run_and_print,
     user_profile,
     write_local_env_config,
@@ -76,16 +81,45 @@ SELECT_ORG_EXAMPLES = [
     "python3 scripts/jumpserver_api/jms_diagnose.py select-org --org-name Default",
 ]
 RECENT_AUDIT_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type login --days 7 --limit 5",
-    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type session --user gusiqing --date-from '2026-03-23 00:00:00' --date-to '2026-03-23 23:59:59' --limit 10",
+    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type login --days 30 --username 示例用户(example.user)",
+    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type login --days 30 --username 示例用户(example.user) --status 1",
+    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type session --user example.user --date-from '2026-03-23 00:00:00' --date-to '2026-03-23 23:59:59' --protocol ssh",
+    "python3 scripts/jumpserver_api/jms_diagnose.py recent-audit --audit-type operate --days 30 --user example.user --action 创建 --resource-type 'User session'",
 ]
 REPORTS_EXAMPLES = [
     "python3 scripts/jumpserver_api/jms_diagnose.py reports --report-type account-statistic --days 30",
 ]
 INSPECT_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10 --limit 10",
+    "python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10",
     "python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability system-settings-overview",
 ]
+RECENT_AUDIT_STRATEGY_FIELDS = {
+    "operate": (
+        ("user", "server_user_exact"),
+        ("action", "server_action_exact"),
+        ("resource_type", "server_resource_type_exact"),
+    ),
+    "login": (
+        ("username", "server_username_exact"),
+        ("ip", "server_ip_exact"),
+        ("type", "server_type_exact"),
+        ("city", "server_city_exact"),
+        ("mfa", "server_mfa_exact"),
+        ("status", "server_status_exact"),
+    ),
+    "session": (
+        ("user", "server_user_exact"),
+        ("account", "server_account_exact"),
+        ("asset", "server_asset_exact"),
+        ("asset_id", "server_asset_id_exact"),
+        ("protocol", "server_protocol_exact"),
+        ("login_from", "server_login_from_exact"),
+        ("remote_addr", "server_remote_addr_exact"),
+    ),
+    "command": (
+        ("asset_id", "server_asset_id_exact"),
+    ),
+}
 
 
 def _config_status(_: argparse.Namespace):
@@ -122,11 +156,6 @@ def _ping(_: argparse.Namespace):
     }
 
 
-def _add_pagination_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--limit", type=int, help="返回条数上限。")
-    parser.add_argument("--offset", type=int, help="分页偏移量。")
-
-
 def _add_time_filter_arguments(parser: argparse.ArgumentParser, *, include_days: bool = True) -> None:
     parser.add_argument("--date-from", dest="date_from", help="开始时间，格式如 `2026-03-23 00:00:00`。")
     parser.add_argument("--date-to", dest="date_to", help="结束时间，格式如 `2026-03-23 23:59:59`。")
@@ -134,23 +163,35 @@ def _add_time_filter_arguments(parser: argparse.ArgumentParser, *, include_days:
         parser.add_argument("--days", type=int, help="最近 N 天；未显式给时间窗时使用。")
 
 
-def _add_common_audit_filter_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_page_query_time_arguments(parser: argparse.ArgumentParser) -> None:
     _add_time_filter_arguments(parser)
-    parser.add_argument("--user", help="用户名或显示名。")
-    parser.add_argument("--user-id", dest="user_id", help="用户 UUID。")
-    parser.add_argument("--asset", help="资产名称、地址或关键字。")
-    parser.add_argument("--status", help="状态过滤，例如 `success`、`failed`。")
-    parser.add_argument("--protocol", help="协议过滤，例如 `ssh`。")
-    parser.add_argument("--account", help="账号过滤。")
-    parser.add_argument("--source-ip", dest="source_ip", help="来源 IP 过滤。")
-    parser.add_argument("--keyword", help="关键字过滤。")
-    _add_pagination_arguments(parser)
+    parser.add_argument("--search", help="页面搜索框的直接搜索关键字。")
+
+
+def _add_enabled_flag_argument(parser: argparse.ArgumentParser, flag_name: str, *, dest: str, help_text: str) -> None:
+    parser.add_argument(flag_name, dest=dest, action="store_const", const=1, default=None, help=help_text)
+
+
+def _merge_match_strategy(current: str, addition: str) -> str:
+    parts = [item for item in str(current or "").split("+") if item]
+    if addition not in parts:
+        parts.append(addition)
+    return "+".join(parts) if parts else addition
+
+
+def _requested_server_filter_strategy(audit_type: str, filters: dict[str, object], *, base: str = "server") -> str:
+    strategy = str(base or "server")
+    if filters.get("search") not in {None, ""}:
+        strategy = "server_search" if strategy == "server" else _merge_match_strategy(strategy, "server_search")
+    for key, strategy_name in RECENT_AUDIT_STRATEGY_FIELDS.get(audit_type, ()):
+        if filters.get(key) not in {None, ""}:
+            strategy = strategy_name if strategy == "server" else _merge_match_strategy(strategy, strategy_name)
+    return strategy
 
 
 def _add_lookup_filter_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--name", help="按名称精确优先匹配。")
     parser.add_argument("--search", help="服务端搜索关键字。")
-    _add_pagination_arguments(parser)
 
 
 def _select_org(args: argparse.Namespace):
@@ -259,10 +300,11 @@ def _resolve(args: argparse.Namespace):
     discovery = create_discovery()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
             "python3 scripts/jumpserver_api/jms_diagnose.py resolve --resource organization --name Default",
-            "python3 scripts/jumpserver_api/jms_diagnose.py resolve --resource user --name gusiqing --limit 5",
+            "python3 scripts/jumpserver_api/jms_diagnose.py resolve --resource user --name example.user",
         ],
     )
     if args.resource == "asset":
@@ -297,7 +339,7 @@ def _resolve(args: argparse.Namespace):
     else:
         wanted = str(args.name or filters.get("name") or "").strip()
         matches = _exact_first_filter([item for item in items if isinstance(item, dict)], wanted, *field_names)
-    return {"resource": args.resource, "matches": matches[: int(filters.get("limit") or 50)]}
+    return {"resource": args.resource, "matches": matches}
 
 
 def _resolve_platform(args: argparse.Namespace):
@@ -460,7 +502,7 @@ def _effective_user_access(user, *, client=None, org_context=None):
     assets_path = "/api/v1/perms/users/%s/assets/" % user_id
     nodes_path = "/api/v1/perms/users/%s/nodes/" % user_id
     asset_params = {"all": 1, "asset": "", "node": "", "offset": 0, "limit": DEFAULT_PAGE_SIZE, "display": 1, "draw": 1}
-    node_params = {"all": 1}
+    node_params = {"all": 1, "offset": 0, "limit": DEFAULT_PAGE_SIZE}
     assets, asset_count, reported_asset_count, asset_warnings = _fetch_effective_access_records(
         active_client,
         assets_path,
@@ -631,41 +673,75 @@ def _recent_audit(args: argparse.Namespace):
                 "date_from",
                 "date_to",
                 "days",
+                "search",
                 "user",
-                "user_id",
-                "asset",
+                "username",
+                "ip",
+                "type",
+                "city",
+                "mfa",
                 "status",
+                "asset",
+                "asset_id",
                 "protocol",
                 "account",
-                "source_ip",
-                "keyword",
-                "limit",
-                "offset",
+                "login_from",
+                "remote_addr",
+                "order",
+                "action",
+                "resource_type",
+                "command_storage_id",
+                "command_storage_scope",
             ),
+            forbidden_fields=("limit", "offset"),
             usage_examples=RECENT_AUDIT_EXAMPLES,
         ),
         default_days=7,
     )
+    if args.audit_type == "operate":
+        filters = _normalize_operate_audit_filters(filters)
+    elif args.audit_type == "login":
+        filters = _normalize_login_audit_filters(filters)
+    elif args.audit_type == "session":
+        filters = _normalize_terminal_session_filters(filters)
     handlers = {
         "login": _login_records,
         "session": _fetch_session_records,
         "command": _fetch_command_records,
     }
+    filter_strategy = _requested_server_filter_strategy(args.audit_type, filters)
     if args.audit_type == "operate":
         client = create_client()
         server_filters = _operate_audit_server_filters(filters)
         result = client.list_paginated("/api/v1/audits/operate-logs/", params=server_filters)
         records = _apply_common_filters([item for item in result if isinstance(item, dict)], filters)
+        if len(records) != len(result):
+            filter_strategy = _merge_match_strategy(filter_strategy, "local_common_filters")
     else:
         records = handlers[args.audit_type](filters)
-    limit = int(filters.get("limit") or 20)
-    formatted = [_format_recent_audit_record(args.audit_type, item, filters=filters) for item in records[:limit]]
+        if args.audit_type == "session":
+            filter_strategy = _requested_server_filter_strategy(
+                args.audit_type,
+                filters,
+                base=next(
+                    (
+                        str(item.get("_filter_strategy") or "").strip()
+                        for item in records
+                        if isinstance(item, dict) and str(item.get("_filter_strategy") or "").strip()
+                    ),
+                    "server",
+                ),
+            )
+        elif args.audit_type == "command":
+            filter_strategy = _requested_server_filter_strategy(args.audit_type, filters, base="server+command_storage_context")
+    formatted = [_format_recent_audit_record(args.audit_type, item, filters=filters) for item in records]
     result = {
         "audit_type": args.audit_type,
         "summary": {
             "total": len(records),
             "returned": len(formatted),
             "filters": {key: value for key, value in filters.items() if not str(key).startswith("_")},
+            "filter_strategy": filter_strategy,
             "data_sources": sorted({item.get("_data_source") for item in records if isinstance(item, dict) and item.get("_data_source")}),
             "filter_strategies": sorted({item.get("_filter_strategy") for item in records if isinstance(item, dict) and item.get("_filter_strategy")}),
         },
@@ -684,7 +760,7 @@ def _settings_category(args: argparse.Namespace):
     filters = merge_filter_args(
         args,
         default={"category": args.category},
-        explicit_fields=("category",),
+        explicit_fields=("category", "id"),
         usage_examples=[
             "python3 scripts/jumpserver_api/jms_diagnose.py settings-category --category security_auth",
         ],
@@ -699,12 +775,15 @@ def _license_detail(_: argparse.Namespace):
 
 def _tickets(args: argparse.Namespace):
     ensure_selected_org_context()
-    filters = merge_filter_args(
+    filters = _normalize_ticket_filters(
+        merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("search", "applicant_username_name", "state", "type"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
-            "python3 scripts/jumpserver_api/jms_diagnose.py tickets --limit 10",
+            "python3 scripts/jumpserver_api/jms_diagnose.py tickets --applicant example.user --state closed --type command_confirm",
         ],
+        ),
     )
     return run_capability("ticket-list-query", filters)
 
@@ -713,9 +792,10 @@ def _command_storages(args: argparse.Namespace):
     ensure_selected_org_context()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
-            "python3 scripts/jumpserver_api/jms_diagnose.py command-storages --limit 10",
+            "python3 scripts/jumpserver_api/jms_diagnose.py command-storages --search default",
         ],
     )
     return run_capability("command-storage-query", filters)
@@ -725,9 +805,10 @@ def _replay_storages(args: argparse.Namespace):
     ensure_selected_org_context()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
-            "python3 scripts/jumpserver_api/jms_diagnose.py replay-storages --limit 10",
+            "python3 scripts/jumpserver_api/jms_diagnose.py replay-storages --search default",
         ],
     )
     return run_capability("replay-storage-query", filters)
@@ -737,9 +818,10 @@ def _terminals(args: argparse.Namespace):
     ensure_selected_org_context()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
-            "python3 scripts/jumpserver_api/jms_diagnose.py terminals --limit 10",
+            "python3 scripts/jumpserver_api/jms_diagnose.py terminals --search koko",
         ],
     )
     return run_capability("terminal-component-query", filters)
@@ -750,7 +832,26 @@ def _reports(args: argparse.Namespace):
     filters = merge_filter_args(
         args,
         default={"report_type": args.report_type},
-        explicit_fields=("report_type", "days", "date_from", "date_to", "limit", "offset", "top"),
+        explicit_fields=(
+            "report_type",
+            "days",
+            "date_from",
+            "date_to",
+            "top",
+            "daily_success_and_failure_metrics",
+            "total_long_time_no_login_accounts",
+            "total_new_found_accounts",
+            "total_groups_changed_accounts",
+            "total_sudoers_changed_accounts",
+            "total_authorized_keys_changed_accounts",
+            "total_account_deleted_accounts",
+            "total_password_expired_accounts",
+            "total_long_time_password_accounts",
+            "total_weak_password_accounts",
+            "total_leaked_password_accounts",
+            "total_repeated_password_accounts",
+        ),
+        forbidden_fields=("limit", "offset"),
         usage_examples=REPORTS_EXAMPLES,
     )
     return run_capability("report-query", filters)
@@ -760,9 +861,10 @@ def _account_automations(args: argparse.Namespace):
     ensure_selected_org_context()
     filters = merge_filter_args(
         args,
-        explicit_fields=("days", "date_from", "date_to", "limit", "offset", "top", "search"),
+        explicit_fields=("days", "date_from", "date_to", "top", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=[
-            "python3 scripts/jumpserver_api/jms_diagnose.py account-automations --days 30 --limit 10",
+            "python3 scripts/jumpserver_api/jms_diagnose.py account-automations --days 30",
         ],
     )
     return run_capability("account-automation-overview", filters)
@@ -825,8 +927,6 @@ def _inspect(args: argparse.Namespace):
             "days",
             "date_from",
             "date_to",
-            "limit",
-            "offset",
             "top",
             "search",
             "user",
@@ -838,6 +938,7 @@ def _inspect(args: argparse.Namespace):
             "keyword",
             "protocol",
         ),
+        forbidden_fields=("limit", "offset"),
         usage_examples=INSPECT_EXAMPLES,
     )
     return run_capability(args.capability, filters)
@@ -924,7 +1025,6 @@ def build_parser() -> argparse.ArgumentParser:
     resolve_parser.add_argument("--id")
     resolve_parser.add_argument("--name")
     resolve_parser.add_argument("--search", help="服务端搜索关键字。")
-    _add_pagination_arguments(resolve_parser)
     add_filter_arguments(resolve_parser)
     resolve_parser.set_defaults(func=_resolve)
 
@@ -986,12 +1086,35 @@ def build_parser() -> argparse.ArgumentParser:
     recent_audit_parser = subparsers.add_parser(
         "recent-audit",
         help="快速查看最近审计。",
-        description="快速读取最近登录、会话、命令或操作审计；未给时间时默认最近 7 天。",
+        description="快速读取最近登录、会话、命令或操作审计，参数语义与页面过滤保持一致；未给时间时默认最近 7 天。",
         epilog="Examples:\n  " + "\n  ".join(RECENT_AUDIT_EXAMPLES),
         formatter_class=CLIHelpFormatter,
     )
     recent_audit_parser.add_argument("--audit-type", required=True, choices=["operate", "login", "session", "command"])
-    _add_common_audit_filter_arguments(recent_audit_parser)
+    _add_page_query_time_arguments(recent_audit_parser)
+    recent_audit_parser.add_argument("--user", help="页面精确用户过滤；用于 operate 和 session，输入用户名或显示名时会解析成页面显示值。")
+    recent_audit_parser.add_argument("--username", help="登录日志页面用户名精确过滤；最终下发 `name(username)`，仅当 audit-type=login 时生效。")
+    recent_audit_parser.add_argument("--ip", help="登录日志页面来源 IP 精确过滤，仅当 audit-type=login 时生效。")
+    recent_audit_parser.add_argument("--type", help="登录日志页面设备类型精确过滤；仅当 audit-type=login 时生效，只支持 `W/T/U`。")
+    recent_audit_parser.add_argument("--city", help="登录日志页面城市精确过滤，仅当 audit-type=login 时生效。")
+    recent_audit_parser.add_argument("--mfa", help="登录日志页面 MFA 状态精确过滤；仅当 audit-type=login 时生效，只支持 `0/1/2`。")
+    recent_audit_parser.add_argument("--status", help="登录日志页面状态精确过滤；仅当 audit-type=login 时生效，只支持 `0/1`；不传时统计该时间窗内的全部登录记录。")
+    recent_audit_parser.add_argument("--asset", help="页面资产精确过滤；仅当 audit-type=session 时生效，输入名称或地址时会解析成 `name(ip)`。")
+    recent_audit_parser.add_argument("--asset-id", dest="asset_id", help="资产 UUID 精确过滤；仅当 audit-type=session 或 command 时生效。")
+    recent_audit_parser.add_argument("--account", help="页面账号精确过滤；仅当 audit-type=session 时生效，输入名称或用户名时会解析成 `name(username)`。")
+    recent_audit_parser.add_argument("--protocol", help="页面协议精确过滤；仅当 audit-type=session 时生效。")
+    recent_audit_parser.add_argument("--login-from", dest="login_from", help="页面登录来源精确过滤；仅当 audit-type=session 时生效，只支持 `WT/ST/RT/DT/VT`。")
+    recent_audit_parser.add_argument("--remote-addr", dest="remote_addr", help="页面远端地址精确过滤；仅当 audit-type=session 时生效。")
+    recent_audit_parser.add_argument("--order", help="页面排序字段；仅当 audit-type=session 或 command 时生效。")
+    recent_audit_parser.add_argument("--command-storage-id", dest="command_storage_id", help="命令记录页面指定 command storage ID，仅当 audit-type=command 时生效。")
+    recent_audit_parser.add_argument(
+        "--command-storage-scope",
+        dest="command_storage_scope",
+        choices=["all"],
+        help="命令记录页面设为 `all` 时汇总全部可访问 command storage，仅当 audit-type=command 时生效。",
+    )
+    recent_audit_parser.add_argument("--action", help="操作日志页面动作精确过滤；仅当 audit-type=operate 时生效，支持 create/创建 等值。")
+    recent_audit_parser.add_argument("--resource-type", dest="resource_type", help="操作日志页面资源类型精确过滤，仅当 audit-type=operate 时生效。")
     add_filter_arguments(recent_audit_parser)
     recent_audit_parser.set_defaults(func=_recent_audit)
 
@@ -1002,6 +1125,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=CLIHelpFormatter,
     )
     settings_category_parser.add_argument("--category", required=True)
+    settings_category_parser.add_argument("--id", help="页面 settings ID。")
     add_filter_arguments(settings_category_parser)
     settings_category_parser.set_defaults(func=_settings_category)
 
@@ -1016,17 +1140,20 @@ def build_parser() -> argparse.ArgumentParser:
     tickets_parser = subparsers.add_parser(
         "tickets",
         help="查看工单列表。",
-        description="查询工单记录，支持名称搜索和分页。",
+        description="查询工单列表，支持页面搜索和申请人/状态/类型精确过滤。",
         formatter_class=CLIHelpFormatter,
     )
-    _add_lookup_filter_arguments(tickets_parser)
+    tickets_parser.add_argument("--search", help="页面搜索框的直接搜索关键字。")
+    tickets_parser.add_argument("--applicant", dest="applicant_username_name", help="页面申请人精确过滤；输入用户名或显示名时会解析成申请人显示名。")
+    tickets_parser.add_argument("--state", help="页面审批状态精确过滤；只支持 `closed/pending/approved/rejected/all`。")
+    tickets_parser.add_argument("--type", help="页面工单类型精确过滤；只支持 `apply_asset/login_confirm/command_confirm/login_asset_confirm`。")
     add_filter_arguments(tickets_parser)
     tickets_parser.set_defaults(func=_tickets)
 
     command_storages_parser = subparsers.add_parser(
         "command-storages",
         help="查看命令存储列表。",
-        description="查询 command storage 列表，支持名称搜索和分页。",
+        description="查询 command storage 列表，默认返回命中的全部结果。",
         formatter_class=CLIHelpFormatter,
     )
     _add_lookup_filter_arguments(command_storages_parser)
@@ -1036,7 +1163,7 @@ def build_parser() -> argparse.ArgumentParser:
     replay_storages_parser = subparsers.add_parser(
         "replay-storages",
         help="查看录像存储列表。",
-        description="查询 replay storage 列表，支持名称搜索和分页。",
+        description="查询 replay storage 列表，默认返回命中的全部结果。",
         formatter_class=CLIHelpFormatter,
     )
     _add_lookup_filter_arguments(replay_storages_parser)
@@ -1046,7 +1173,7 @@ def build_parser() -> argparse.ArgumentParser:
     terminals_parser = subparsers.add_parser(
         "terminals",
         help="查看终端组件列表。",
-        description="查询终端组件列表，支持名称搜索和分页。",
+        description="查询终端组件列表，默认返回命中的全部结果。",
         formatter_class=CLIHelpFormatter,
     )
     _add_lookup_filter_arguments(terminals_parser)
@@ -1056,7 +1183,7 @@ def build_parser() -> argparse.ArgumentParser:
     reports_parser = subparsers.add_parser(
         "reports",
         help="读取系统报表与 dashboard。",
-        description="读取 account / asset 等系统报表，支持时间范围和分页参数。",
+        description="读取 account / asset 等系统报表，默认返回命中范围内的全部结果。",
         epilog="Examples:\n  " + "\n  ".join(REPORTS_EXAMPLES),
         formatter_class=CLIHelpFormatter,
     )
@@ -1075,8 +1202,79 @@ def build_parser() -> argparse.ArgumentParser:
         ],
     )
     _add_time_filter_arguments(reports_parser)
-    _add_pagination_arguments(reports_parser)
     reports_parser.add_argument("--top", type=int, help="排行类报表返回前 N 条。")
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--daily-success-and-failure-metrics",
+        dest="daily_success_and_failure_metrics",
+        help_text="change-secret-dashboard 页面指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-long-time-no-login-accounts",
+        dest="total_long_time_no_login_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-new-found-accounts",
+        dest="total_new_found_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-groups-changed-accounts",
+        dest="total_groups_changed_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-sudoers-changed-accounts",
+        dest="total_sudoers_changed_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-authorized-keys-changed-accounts",
+        dest="total_authorized_keys_changed_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-account-deleted-accounts",
+        dest="total_account_deleted_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-password-expired-accounts",
+        dest="total_password_expired_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-long-time-password-accounts",
+        dest="total_long_time_password_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-weak-password-accounts",
+        dest="total_weak_password_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-leaked-password-accounts",
+        dest="total_leaked_password_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
+    _add_enabled_flag_argument(
+        reports_parser,
+        "--total-repeated-password-accounts",
+        dest="total_repeated_password_accounts",
+        help_text="pam-dashboard 指标开关。",
+    )
     add_filter_arguments(reports_parser)
     reports_parser.set_defaults(func=_reports)
 
@@ -1088,7 +1286,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_time_filter_arguments(account_automations_parser)
     account_automations_parser.add_argument("--search", help="搜索关键字。")
-    _add_pagination_arguments(account_automations_parser)
     account_automations_parser.add_argument("--top", type=int, help="排行类场景返回前 N 条。")
     add_filter_arguments(account_automations_parser)
     account_automations_parser.set_defaults(func=_account_automations)
@@ -1131,7 +1328,6 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.add_argument("--direction", help="方向过滤，例如 upload / download。")
     inspect_parser.add_argument("--keyword", help="关键字过滤。")
     inspect_parser.add_argument("--protocol", help="协议过滤。")
-    _add_pagination_arguments(inspect_parser)
     inspect_parser.add_argument("--top", type=int, help="排行类场景返回前 N 条。")
     add_filter_arguments(inspect_parser)
     inspect_parser.set_defaults(func=_inspect)
@@ -1147,9 +1343,32 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-    return run_and_print(args.func, args)
+    def _run_cli():
+        parser = build_parser()
+        reject_deprecated_pagination_cli_args(
+            sys.argv[1:],
+            script_name="jms_diagnose.py",
+            deprecated_commands={
+                "resolve",
+                "recent-audit",
+                "tickets",
+                "command-storages",
+                "replay-storages",
+                "terminals",
+                "reports",
+                "account-automations",
+                "inspect",
+            },
+            usage_examples_by_command={
+                "recent-audit": RECENT_AUDIT_EXAMPLES,
+                "reports": REPORTS_EXAMPLES,
+                "inspect": INSPECT_EXAMPLES,
+            },
+        )
+        args = parser.parse_args(sys.argv[1:])
+        return args.func(args)
+
+    return run_and_print(_run_cli)
 
 
 if __name__ == "__main__":

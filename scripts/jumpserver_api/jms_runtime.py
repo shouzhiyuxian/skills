@@ -67,6 +67,7 @@ ORG_SELECTION_POLICY = "required_before_query_when_multiple_accessible_orgs"
 INVALID_JSON_PAYLOAD_REASON_CODE = "invalid_json_payload"
 INVALID_FILTER_ASSIGNMENT_REASON_CODE = "invalid_filter_assignment"
 CONFIRMATION_REQUIRED_REASON_CODE = "confirmation_required"
+DEPRECATED_PAGINATION_REASON_CODE = "deprecated_pagination_args"
 DEFAULT_TIMEOUT = 30
 _GLOBAL_ORG_PROBE_ATTEMPTED = False
 _GLOBAL_ORG_PROBE_RESULT: dict[str, Any] | None = None
@@ -166,7 +167,7 @@ def parse_filter_assignments(
                 "无法解析 --filter 参数。",
                 payload=build_cli_guidance_payload(
                     INVALID_FILTER_ASSIGNMENT_REASON_CODE,
-                    user_message="`--filter` 需要使用 `key=value` 形式，例如 `--filter limit=5`。",
+                    user_message="`--filter` 需要使用 `key=value` 形式，例如 `--filter name=Default`。",
                     action_hint="优先使用显式参数；如果需要补充高级筛选，再重复传入 `--filter key=value`。",
                     suggested_commands=usage_examples,
                     invalid_filter=item or None,
@@ -341,7 +342,7 @@ def parse_json_arg(
             "无法解析 %s 参数。" % source,
             payload=build_cli_guidance_payload(
                 INVALID_JSON_PAYLOAD_REASON_CODE,
-                user_message="%s 需要传入 JSON 对象字符串，例如 '{\"limit\": 5}'。" % source,
+                user_message="%s 需要传入 JSON 对象字符串，例如 '{\"name\": \"Default\"}'。" % source,
                 action_hint="优先改用显式参数或重复的 `--filter key=value`；如果继续使用 JSON，请检查引号、逗号和花括号。",
                 suggested_commands=usage_examples,
                 input_name=source,
@@ -369,6 +370,7 @@ def merge_filter_args(
     *,
     default: dict[str, Any] | None = None,
     explicit_fields: dict[str, str] | list[str] | tuple[str, ...] = (),
+    forbidden_fields: list[str] | tuple[str, ...] = (),
     usage_examples: list[str] | None = None,
 ) -> dict[str, Any]:
     filters = parse_json_arg(
@@ -388,7 +390,98 @@ def merge_filter_args(
         value = getattr(args, attr_name)
         if has_cli_value(value):
             filters[filter_key] = value
+    if forbidden_fields:
+        active_forbidden = {
+            field: filters[field]
+            for field in forbidden_fields
+            if field in filters and has_cli_value(filters[field])
+        }
+        if active_forbidden:
+            raise CLIError(
+                "分页参数已废弃。",
+                payload=build_cli_guidance_payload(
+                    DEPRECATED_PAGINATION_REASON_CODE,
+                    user_message="该 skill 已改为全量抓取并全量返回，不再支持 `--limit/--offset` 或等价分页过滤。",
+                    action_hint="请直接移除这些分页参数后重试；当前命令会自动翻页抓取查询范围内的全部数据。",
+                    suggested_commands=usage_examples,
+                    deprecated_fields=sorted(active_forbidden),
+                    deprecated_values=active_forbidden,
+                ),
+            )
     return filters
+
+
+def _pagination_arg_names(tokens: list[str]) -> list[str]:
+    names: list[str] = []
+    for token in tokens:
+        if token in {"--limit", "--offset"}:
+            names.append(token)
+            continue
+        if token.startswith("--limit="):
+            names.append("--limit")
+            continue
+        if token.startswith("--offset="):
+            names.append("--offset")
+    seen: list[str] = []
+    for item in names:
+        if item not in seen:
+            seen.append(item)
+    return seen
+
+
+def _strip_pagination_tokens(tokens: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("--limit=") or token.startswith("--offset="):
+            index += 1
+            continue
+        if token in {"--limit", "--offset"}:
+            index += 1
+            if index < len(tokens) and not str(tokens[index]).startswith("--"):
+                index += 1
+            continue
+        cleaned.append(token)
+        index += 1
+    return cleaned
+
+
+def reject_deprecated_pagination_cli_args(
+    argv: list[str],
+    *,
+    script_name: str,
+    deprecated_commands: set[str],
+    usage_examples_by_command: dict[str, list[str]] | None = None,
+) -> None:
+    if not argv:
+        return
+    command = str(argv[0] or "").strip()
+    if command not in deprecated_commands:
+        return
+    deprecated_args = _pagination_arg_names(argv[1:])
+    if not deprecated_args:
+        return
+    cleaned_args = _strip_pagination_tokens(argv)
+    suggested_commands: list[str] = []
+    if cleaned_args:
+        suggested_commands.append(
+            "python3 scripts/jumpserver_api/%s %s" % (script_name, " ".join(cleaned_args))
+        )
+    for item in (usage_examples_by_command or {}).get(command, []):
+        if item not in suggested_commands:
+            suggested_commands.append(item)
+    raise CLIError(
+        "分页参数已废弃。",
+        payload=build_cli_guidance_payload(
+            DEPRECATED_PAGINATION_REASON_CODE,
+            user_message="该 skill 已改为全量抓取并全量返回，不再支持 `--limit/--offset`。",
+            action_hint="请直接移除这些参数后重试；当前命令会自动翻页抓取查询范围内的全部数据。",
+            suggested_commands=suggested_commands,
+            command=command,
+            deprecated_args=deprecated_args,
+        ),
+    )
 
 
 def add_filter_arguments(parser: argparse.ArgumentParser, *, include_legacy_json: bool = True) -> None:
@@ -396,7 +489,7 @@ def add_filter_arguments(parser: argparse.ArgumentParser, *, include_legacy_json
         "--filter",
         action="append",
         metavar="KEY=VALUE",
-        help="推荐的高级补充筛选写法，可重复传入，例如 `--filter limit=5 --filter user=gusiqing`。",
+        help="推荐的高级补充筛选写法，可重复传入，例如 `--filter user=example.user --filter protocol=ssh`。",
     )
     if include_legacy_json:
         parser.add_argument(

@@ -42,29 +42,97 @@ class JumpServerClient(object):
         results = []
         next_ref = path
         next_params = dict(params or {})
-        follow_all = not any(key in next_params for key in ("limit", "offset"))
-        if follow_all:
-            next_params["limit"] = int(next_params.get("limit") or DEFAULT_PAGE_SIZE)
+        seen_list_page_signatures = set()
 
         while next_ref:
-            payload = self.get(next_ref, params=next_params)
+            request_ref = next_ref
+            request_params = dict(next_params or {})
+            payload = self.get(request_ref, params=request_params or None)
             next_params = None
 
             if isinstance(payload, list):
-                results.extend(payload)
-                break
+                page_records = payload
+                if not page_records:
+                    break
+                page_signature = self._page_signature(page_records)
+                if page_signature in seen_list_page_signatures:
+                    break
+                seen_list_page_signatures.add(page_signature)
+                results.extend(page_records)
+                page_limit = self._page_limit(payload, request_params, page_records)
+                if len(page_records) < page_limit:
+                    break
+                next_ref = self._next_offset_ref(self._request_ref(request_ref, request_params), page_limit)
+                continue
             if isinstance(payload, dict) and isinstance(payload.get("results"), list):
                 page_records = payload.get("results") or []
                 results.extend(page_records)
-                if not follow_all:
+                if not page_records:
                     break
-                next_ref = payload.get("next") or self._next_offset_ref(next_ref, len(page_records))
-                if len(page_records) < int((payload.get("limit") or DEFAULT_PAGE_SIZE)):
+                next_ref = payload.get("next")
+                if next_ref:
+                    continue
+                page_limit = self._page_limit(payload, request_params, page_records)
+                current_offset = self._current_offset(request_ref, request_params)
+                total_count = self._total_count(payload)
+                if total_count is not None and current_offset + len(page_records) >= total_count:
                     break
+                if len(page_records) < page_limit:
+                    break
+                next_ref = self._next_offset_ref(self._request_ref(request_ref, request_params), page_limit)
                 continue
             return payload
 
         return results
+
+    def _page_signature(self, page_records):
+        try:
+            raw = json.dumps(page_records, sort_keys=True, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            raw = repr(page_records)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _request_ref(self, path, params):
+        if not params:
+            return path
+        raw = urlparse(self._absolute_url(path))
+        query = dict(parse_qsl(raw.query, keep_blank_values=True))
+        for key, value in params.items():
+            if value in {None, ""}:
+                continue
+            query[str(key)] = str(value)
+        next_query = urlencode(query)
+        return urlunparse(raw._replace(query=next_query))
+
+    def _current_offset(self, path, params):
+        if params and params.get("offset") not in {None, ""}:
+            return int(params.get("offset") or 0)
+        raw = urlparse(self._absolute_url(path))
+        query = dict(parse_qsl(raw.query, keep_blank_values=True))
+        return int(query.get("offset") or 0)
+
+    def _page_limit(self, payload, params, page_records):
+        for candidate in (
+            payload.get("limit") if isinstance(payload, dict) else None,
+            (params or {}).get("limit"),
+            len(page_records),
+            DEFAULT_PAGE_SIZE,
+        ):
+            try:
+                value = int(candidate or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return value
+        return DEFAULT_PAGE_SIZE
+
+    def _total_count(self, payload):
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return int(payload.get("count"))
+        except (TypeError, ValueError):
+            return None
 
     def _next_offset_ref(self, path, page_size):
         raw = urlparse(self._absolute_url(path))

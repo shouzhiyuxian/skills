@@ -55,7 +55,7 @@ cp .env.example .env
 
 如果你希望直接手动执行正式入口，推荐按下面的顺序使用参数：
 
-1. 优先使用显式参数，例如 `--org-name`、`--name`、`--days`、`--user`、`--limit`
+1. 优先使用显式参数，例如 `--org-name`、`--name`、`--days`、`--user`
 2. 需要补充少量高级字段时，再重复传入 `--filter key=value`
 3. 只有兼容旧命令时，才使用 `--filters '{"key":"value"}'`
 
@@ -63,19 +63,21 @@ cp .env.example .env
 
 ```bash
 python3 scripts/jumpserver_api/jms_diagnose.py select-org --org-name Default
-python3 scripts/jumpserver_api/jms_diagnose.py user-assets --org-name Default --username gusiqing
-python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default --limit 5
-python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user gusiqing --limit 20
-python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10 --limit 10
+python3 scripts/jumpserver_api/jms_diagnose.py user-assets --org-name Default --username example.user
+python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user example.user
+python3 scripts/jumpserver_api/jms_diagnose.py inspect --capability hot-assets-ranking --days 30 --top 10
 python3 scripts/jumpserver_api/jms_diagnose.py reports --report-type account-statistic --days 30
 ```
 
 兼容写法：
 
 ```bash
-python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --filters '{"name":"Default","limit":5}'
-python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filter user=gusiqing --filter days=7 --filter limit=20
+python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --filters '{"name":"Default"}'
+python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --filter user=example.user --filter days=7
 ```
+
+列表型和分析型命令默认会自动翻页抓取并返回查询范围内的全部结果，不再支持 `--limit/--offset`。
 
 ## 环境变量
 

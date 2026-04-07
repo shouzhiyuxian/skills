@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import re
+import time
 
 from .jms_types import EndpointSpec, JumpServerAPIError, PlatformSpec
 
@@ -49,6 +51,8 @@ CORE_ENDPOINTS = {
     "replay_storages": "/api/v1/terminal/replay-storages/",
 }
 
+THROTTLE_WAIT_RE = re.compile(r"Expected available in (\d+) second")
+
 
 def _to_lower(value):
     return str(value or "").strip().lower()
@@ -56,6 +60,19 @@ def _to_lower(value):
 
 def _titleish(value):
     return _to_lower(value).replace("-", " ").replace("_", " ")
+
+
+def _throttle_wait_seconds(exc):
+    detail_text = str(getattr(exc, "message", "") or "")
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        nested_detail = details.get("detail")
+        if nested_detail:
+            detail_text = "%s %s" % (detail_text, nested_detail)
+    match = THROTTLE_WAIT_RE.search(detail_text)
+    if match:
+        return max(int(match.group(1)), 1)
+    return 5
 
 
 class JumpServerDiscovery(object):
@@ -69,7 +86,16 @@ class JumpServerDiscovery(object):
             return copy.deepcopy(self._cache[cache_key])
         specs = {}
         for name, path in CORE_ENDPOINTS.items():
-            data = self.client.options(path)
+            attempt = 0
+            while True:
+                try:
+                    data = self.client.options(path)
+                    break
+                except JumpServerAPIError as exc:
+                    if getattr(exc, "status_code", None) != 429 or attempt >= 7:
+                        raise
+                    attempt += 1
+                    time.sleep(_throttle_wait_seconds(exc) + 1)
             methods = []
             if isinstance(data, dict):
                 methods = sorted([item.upper() for item in (data.get("actions") or {}).keys()])

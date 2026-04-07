@@ -6,7 +6,7 @@
 - 主入口：`python3 scripts/jumpserver_api/jms_query.py <subcommand> ...`
 - 组织对象也走这个入口：`--resource organization`
 - 这个入口只提供查询：`object-list` 与 `object-get`
-- 所有列表型读取入口默认自动翻页拉全量；只有在 filters 里显式传 `limit` / `offset` 时才按分页结果返回。
+- 所有列表型读取入口默认自动翻页抓取当前查询范围内的全部结果，不再支持 `--limit/--offset`。
 
 ## 子命令与资源
 
@@ -64,14 +64,14 @@
 精确查询用户：
 
 ```bash
-python3 scripts/jumpserver_api/jms_query.py object-list --resource user --filters '{"username":"openclaw"}'
+python3 scripts/jumpserver_api/jms_query.py object-list --resource user --name openclaw
 ```
 
 查询某类资产：
 
 ```bash
-python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind host --filters '{"name":"prod","is_active":true}'
-python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind database --filters '{"address":"10.0.0.12"}'
+python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind host --name prod --filter is_active=true
+python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind database --filter address=192.0.2.12
 ```
 
 读取对象详情：
@@ -85,6 +85,6 @@ python3 scripts/jumpserver_api/jms_query.py object-get --resource user --id <use
 读取组织与用户组：
 
 ```bash
-python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --filters '{"name":"Default"}'
-python3 scripts/jumpserver_api/jms_query.py object-list --resource user-group --filters '{"name":"运维组"}'
+python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default
+python3 scripts/jumpserver_api/jms_query.py object-list --resource user-group --name 运维组
 ```

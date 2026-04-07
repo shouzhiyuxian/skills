@@ -12,6 +12,7 @@ from jumpserver_api.jms_bootstrap import ensure_requirements_installed
 ensure_requirements_installed()
 
 import argparse
+import sys
 
 from jumpserver_api.jms_analytics import (
     _apply_common_filters,
@@ -21,12 +22,16 @@ from jumpserver_api.jms_analytics import (
     _fetch_command_record_by_id,
     _fetch_command_records,
     _fetch_terminal_session_records,
+    _list_request_filters,
+    _normalize_job_audit_filters,
+    _normalize_login_audit_filters,
+    _normalize_operate_audit_filters,
+    _normalize_password_change_audit_filters,
+    _normalize_terminal_session_filters,
     _normalize_time_filters,
     _normalize_user_filter_payload,
-    _operate_audit_server_filters,
     _resolve_asset,
     _resolve_user,
-    _server_filters,
     explain_asset_permissions,
     resolve_command_storage_context,
     run_capability,
@@ -41,6 +46,7 @@ from jumpserver_api.jms_runtime import (
     merge_filter_args,
     org_context_output,
     parse_bool,
+    reject_deprecated_pagination_cli_args,
     run_and_print,
 )
 
@@ -132,32 +138,94 @@ COMMAND_AUDIT_CAPABILITIES = {
 }
 
 OBJECT_LIST_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default --limit 5",
-    "python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind host --search prod --limit 10",
+    "python3 scripts/jumpserver_api/jms_query.py object-list --resource organization --name Default",
+    "python3 scripts/jumpserver_api/jms_query.py object-list --resource asset --kind host --search prod",
 ]
 PERMISSION_LIST_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_query.py permission-list --resource asset-permission --name 生产环境授权 --limit 10",
-    "python3 scripts/jumpserver_api/jms_query.py permission-list --resource asset-permission --filter users=jingyu.qi --limit 20",
+    "python3 scripts/jumpserver_api/jms_query.py permission-list --resource asset-permission --name 生产环境授权",
+    "python3 scripts/jumpserver_api/jms_query.py permission-list --resource asset-permission --filter users=example.user",
 ]
 ASSET_PERM_USERS_EXAMPLES = [
     "python3 scripts/jumpserver_api/jms_query.py asset-perm-users --asset-id <asset-id>",
 ]
 AUDIT_LIST_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type login --days 7 --limit 5",
-    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type session --date-from '2026-03-23 00:00:00' --date-to '2026-03-23 23:59:59' --user gusiqing --limit 20",
+    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type login --days 30 --username 示例用户(example.user)",
+    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type login --days 30 --username 示例用户(example.user) --status 1",
+    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type terminal-session --days 7 --user example.user --asset demo-host --protocol ssh",
+    "python3 scripts/jumpserver_api/jms_query.py audit-list --audit-type operate --days 30 --user example.user --action 创建 --resource-type 'User session'",
 ]
 TERMINAL_SESSION_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view history --days 7 --limit 10",
-    "python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view online --asset demo-host",
+    "python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view history --days 7 --user example.user",
+    "python3 scripts/jumpserver_api/jms_query.py terminal-sessions --view online --asset demo-host --protocol ssh",
+]
+JOB_LIST_EXAMPLES = [
+    "python3 scripts/jumpserver_api/jms_query.py job-list --name 删除Windows用户",
+    "python3 scripts/jumpserver_api/jms_query.py job-list --search shell",
 ]
 COMMAND_STORAGE_HINT_EXAMPLES = [
     "python3 scripts/jumpserver_api/jms_query.py command-storage-hint",
     "python3 scripts/jumpserver_api/jms_query.py command-storage-hint --command-storage-id <storage-id>",
 ]
 AUDIT_ANALYZE_EXAMPLES = [
-    "python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user gusiqing --limit 20",
+    "python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability session-record-query --days 7 --user example.user",
     "python3 scripts/jumpserver_api/jms_query.py audit-analyze --capability command-record-query --date-from '2026-03-01 00:00:00' --date-to '2026-03-20 23:59:59' --command-storage-scope all",
 ]
+AUDIT_STRATEGY_FIELDS = {
+    "operate": (
+        ("user", "server_user_exact"),
+        ("action", "server_action_exact"),
+        ("resource_type", "server_resource_type_exact"),
+    ),
+    "login": (
+        ("username", "server_username_exact"),
+        ("ip", "server_ip_exact"),
+        ("type", "server_type_exact"),
+        ("city", "server_city_exact"),
+        ("mfa", "server_mfa_exact"),
+        ("status", "server_status_exact"),
+    ),
+    "password_change": (
+        ("user", "server_user_exact"),
+        ("change_by", "server_change_by_exact"),
+        ("remote_addr", "server_remote_addr_exact"),
+    ),
+    "jobs": (
+        ("creator__name", "server_creator_name_exact"),
+        ("material", "server_material_exact"),
+    ),
+    "session": (
+        ("user", "server_user_exact"),
+        ("account", "server_account_exact"),
+        ("asset", "server_asset_exact"),
+        ("asset_id", "server_asset_id_exact"),
+        ("protocol", "server_protocol_exact"),
+        ("login_from", "server_login_from_exact"),
+        ("remote_addr", "server_remote_addr_exact"),
+    ),
+    "terminal-session": (
+        ("user", "server_user_exact"),
+        ("account", "server_account_exact"),
+        ("asset", "server_asset_exact"),
+        ("asset_id", "server_asset_id_exact"),
+        ("protocol", "server_protocol_exact"),
+        ("login_from", "server_login_from_exact"),
+        ("remote_addr", "server_remote_addr_exact"),
+    ),
+    "command": (
+        ("asset_id", "server_asset_id_exact"),
+    ),
+}
+COMMON_QUERY_FIELDS = ("date_from", "date_to", "days", "search")
+AUDIT_ALLOWED_FIELDS = {
+    "operate": COMMON_QUERY_FIELDS + ("user", "action", "resource_type"),
+    "login": COMMON_QUERY_FIELDS + ("username", "ip", "type", "city", "mfa", "status"),
+    "password_change": COMMON_QUERY_FIELDS + ("user", "change_by", "remote_addr"),
+    "jobs": COMMON_QUERY_FIELDS + ("creator__name", "material"),
+    "session": COMMON_QUERY_FIELDS + ("user", "asset", "asset_id", "account", "protocol", "login_from", "remote_addr", "order"),
+    "ftp": COMMON_QUERY_FIELDS,
+    "command": COMMON_QUERY_FIELDS + ("asset_id", "order", "command_storage_id", "command_storage_scope"),
+    "terminal-session": COMMON_QUERY_FIELDS + ("user", "asset", "asset_id", "account", "protocol", "login_from", "remote_addr", "order"),
+}
 
 
 def _asset_list_path(kind: str | None) -> str:
@@ -188,30 +256,40 @@ def _without_pagination(filters: dict) -> dict:
     return payload
 
 
-def _apply_requested_page(records, filters: dict):
-    if not isinstance(records, list):
-        return records
-    if filters.get("limit") in {None, ""} and filters.get("offset") in {None, ""}:
-        return records
-    try:
-        offset = max(int(filters.get("offset") or 0), 0)
-    except (TypeError, ValueError):
-        offset = 0
-    try:
-        limit = int(filters.get("limit")) if filters.get("limit") not in {None, ""} else None
-    except (TypeError, ValueError):
-        limit = None
-    if limit is not None and limit < 0:
-        limit = None
-    end = offset + limit if limit is not None else None
-    return records[offset:end]
-
-
 def _merge_match_strategy(current: str, addition: str) -> str:
     parts = [item for item in str(current or "").split("+") if item]
     if addition not in parts:
         parts.append(addition)
     return "+".join(parts) if parts else addition
+
+
+def _requested_server_filter_strategy(audit_type: str, filters: dict[str, object], *, base: str = "server") -> str:
+    strategy = str(base or "server")
+    if filters.get("search") not in {None, ""}:
+        strategy = "server_search" if strategy == "server" else _merge_match_strategy(strategy, "server_search")
+    for key, strategy_name in AUDIT_STRATEGY_FIELDS.get(audit_type, ()):
+        if filters.get(key) not in {None, ""}:
+            strategy = strategy_name if strategy == "server" else _merge_match_strategy(strategy, strategy_name)
+    return strategy
+
+
+def _trim_audit_filters(audit_type: str, filters: dict[str, object]) -> dict[str, object]:
+    allowed = set(AUDIT_ALLOWED_FIELDS.get(audit_type, COMMON_QUERY_FIELDS))
+    return {key: value for key, value in filters.items() if key in allowed or str(key).startswith("_")}
+
+
+def _normalize_audit_filters(audit_type: str, filters: dict[str, object]) -> dict[str, object]:
+    if audit_type == "operate":
+        return _normalize_operate_audit_filters(filters)
+    if audit_type == "login":
+        return _normalize_login_audit_filters(filters)
+    if audit_type == "password_change":
+        return _normalize_password_change_audit_filters(filters)
+    if audit_type == "jobs":
+        return _normalize_job_audit_filters(filters)
+    if audit_type in {"session", "terminal-session"}:
+        return _normalize_terminal_session_filters(filters)
+    return dict(filters)
 
 
 def _candidate_brief(resource: str, item: dict) -> dict:
@@ -322,7 +400,8 @@ def _object_list(args: argparse.Namespace):
     client = create_client()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset"),
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=OBJECT_LIST_EXAMPLES,
     )
     path = _object_list_path(args.resource, args.kind)
@@ -378,11 +457,6 @@ def _permission_brief(item: dict) -> dict:
     }
 
 
-def _add_pagination_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--limit", type=int, help="返回条数上限。")
-    parser.add_argument("--offset", type=int, help="分页偏移量。")
-
-
 def _add_time_filter_arguments(parser: argparse.ArgumentParser, *, include_days: bool = True) -> None:
     parser.add_argument("--date-from", dest="date_from", help="开始时间，格式如 `2026-03-23 00:00:00`。")
     parser.add_argument("--date-to", dest="date_to", help="结束时间，格式如 `2026-03-23 23:59:59`。")
@@ -402,11 +476,11 @@ def _add_common_audit_filter_arguments(
     parser.add_argument("--user", help="用户名或显示名。")
     parser.add_argument("--user-id", dest="user_id", help="用户 UUID。")
     parser.add_argument("--asset", help="资产名称、地址或关键字。")
+    parser.add_argument("--search", help="服务端搜索关键字。")
     parser.add_argument("--status", help="状态过滤，例如 `success`、`failed`。")
     parser.add_argument("--protocol", help="协议过滤，例如 `ssh`。")
     parser.add_argument("--account", help="账号过滤。")
     parser.add_argument("--source-ip", dest="source_ip", help="来源 IP 过滤。")
-    _add_pagination_arguments(parser)
     if include_keyword:
         parser.add_argument("--keyword", help="关键字过滤，适用于命令/内容类查询。")
     if include_direction:
@@ -423,14 +497,22 @@ def _add_common_audit_filter_arguments(
         parser.add_argument("--top", type=int, help="排行场景返回前 N 条。")
 
 
+def _add_page_query_time_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_time_filter_arguments(parser)
+    parser.add_argument("--search", help="页面搜索框的直接搜索关键字。")
+
+
 def _permission_list(args: argparse.Namespace):
     context = ensure_selected_org_context()
     client = create_client()
     filters = merge_filter_args(
         args,
-        explicit_fields=("name", "search", "limit", "offset", "user", "users", "is_expired"),
+        explicit_fields=("name", "search", "user", "user_id", "users", "is_expired"),
+        forbidden_fields=("limit", "offset"),
         usage_examples=PERMISSION_LIST_EXAMPLES,
     )
+    if args.resource != "asset-permission":
+        filters.pop("user_id", None)
     path = _permission_resource_path(args.resource)
     records = client.list_paginated(path, params=filters)
     filtered_records = [item for item in records if isinstance(item, dict)] if isinstance(records, list) else records
@@ -473,7 +555,7 @@ def _permission_list(args: argparse.Namespace):
                 field_value,
                 discovery=discovery,
             )
-            filtered_records = _apply_requested_page(locally_filtered_records, filters)
+            filtered_records = locally_filtered_records
             match_strategy = _merge_match_strategy(match_strategy, "local_detail_user_filter")
             summary["requested_user_filter"] = {"field": field_name, "value": field_value}
             summary["matched_user"] = {
@@ -483,6 +565,7 @@ def _permission_list(args: argparse.Namespace):
                 "email": resolved_user.get("email"),
             }
             summary["local_detail_user_filter_candidate_count"] = len(broader_records)
+            summary["local_detail_user_filter_total"] = len(locally_filtered_records)
             summary["local_detail_user_filter_total_before_pagination"] = len(locally_filtered_records)
             if not filtered_records and not summary.get("empty_reason_hint"):
                 summary["empty_reason_hint"] = "当前组织下实时可见的 asset-permission 中未发现匹配该用户或其用户组的规则。"
@@ -540,7 +623,12 @@ def _asset_perm_users(args: argparse.Namespace):
     context = ensure_selected_org_context()
     client = create_client()
     discovery = create_discovery()
-    filters = merge_filter_args(args, explicit_fields=("limit", "offset", "search"), usage_examples=ASSET_PERM_USERS_EXAMPLES)
+    filters = merge_filter_args(
+        args,
+        explicit_fields=("search",),
+        forbidden_fields=("limit", "offset"),
+        usage_examples=ASSET_PERM_USERS_EXAMPLES,
+    )
     records = client.list_paginated("/api/v1/assets/assets/%s/perm-users/" % args.asset_id, params=filters)
     result = {
         "resource": "asset-perm-users",
@@ -575,51 +663,71 @@ def _asset_perm_users(args: argparse.Namespace):
 def _audit_list(args: argparse.Namespace):
     context = ensure_selected_org_context()
     client = create_client()
-    filters = _normalize_time_filters(
+    filters = _trim_audit_filters(
+        args.audit_type,
         merge_filter_args(
             args,
             explicit_fields=(
                 "date_from",
                 "date_to",
                 "days",
+                "search",
                 "user",
-                "user_id",
-                "asset",
+                "username",
+                "ip",
+                "type",
+                "city",
+                "mfa",
                 "status",
-                "protocol",
+                "change_by",
+                "remote_addr",
+                "creator__name",
+                "material",
+                "asset",
+                "asset_id",
                 "account",
-                "source_ip",
-                "keyword",
-                "limit",
-                "offset",
+                "protocol",
+                "login_from",
+                "order",
+                "action",
+                "resource_type",
+                "command_storage_id",
+                "command_storage_scope",
             ),
+            forbidden_fields=("limit", "offset"),
             usage_examples=AUDIT_LIST_EXAMPLES,
         ),
-        default_days=7,
     )
-    filter_strategy = "server"
+    filters = _normalize_time_filters(filters, default_days=7)
+    filters = _normalize_audit_filters(args.audit_type, filters)
+    filter_strategy = _requested_server_filter_strategy(args.audit_type, filters)
     if args.audit_type == "terminal-session":
         result, meta = _fetch_terminal_session_records(filters)
-        filter_strategy = meta.get("filter_strategy") or filter_strategy
+        filter_strategy = _requested_server_filter_strategy(
+            args.audit_type,
+            filters,
+            base=meta.get("filter_strategy") or filter_strategy,
+        )
     elif args.audit_type == "command":
         result = _fetch_command_records(filters)
-        filter_strategy = "server+command_storage_context"
-    elif args.audit_type == "operate":
-        result = client.list_paginated(AUDIT_PATHS[args.audit_type], params=_operate_audit_server_filters(filters))
-        if isinstance(result, list):
-            filtered = _apply_common_filters([item for item in result if isinstance(item, dict)], filters)
-            if len(filtered) != len(result):
-                filter_strategy = "server+local_common_filters"
-            result = filtered
+        filter_strategy = _requested_server_filter_strategy(args.audit_type, filters, base="server+command_storage_context")
     else:
-        result = client.list_paginated(AUDIT_PATHS[args.audit_type], params=_server_filters(filters))
+        path = AUDIT_PATHS[args.audit_type]
+        result = client.list_paginated(path, params=_list_request_filters(path, filters))
         if isinstance(result, list):
             filtered = _apply_common_filters([item for item in result if isinstance(item, dict)], filters)
             if len(filtered) != len(result):
-                filter_strategy = "server+local_common_filters"
+                filter_strategy = _merge_match_strategy(filter_strategy, "local_common_filters")
             result = filtered
+    total = len(result) if isinstance(result, list) else None
     payload = {
         "audit_type": args.audit_type,
+        "summary": {
+            "total": total,
+            "returned": total,
+            "filters": {key: value for key, value in filters.items() if not str(key).startswith("_")},
+            "filter_strategy": filter_strategy,
+        },
         "filter_strategy": filter_strategy,
         "records": result,
         **org_context_output(context),
@@ -646,34 +754,40 @@ def _terminal_sessions(args: argparse.Namespace):
                 "date_from",
                 "date_to",
                 "days",
+                "search",
                 "user",
-                "user_id",
                 "asset",
-                "status",
-                "protocol",
+                "asset_id",
                 "account",
-                "source_ip",
-                "keyword",
-                "limit",
-                "offset",
+                "protocol",
+                "login_from",
+                "remote_addr",
+                "order",
             ),
+            forbidden_fields=("limit", "offset"),
             usage_examples=TERMINAL_SESSION_EXAMPLES,
         ),
         default_days=7,
     )
+    filters = _normalize_terminal_session_filters(filters)
     preset = TERMINAL_SESSION_PRESETS.get(args.view or "")
     if preset:
         for key, value in preset.items():
             filters.setdefault(key, value)
 
     filtered, meta = _fetch_terminal_session_records(filters)
+    filter_strategy = _requested_server_filter_strategy(
+        "terminal-session",
+        filters,
+        base=meta.get("filter_strategy") or "server",
+    )
     payload = {
         "audit_type": "terminal-session",
         "view": args.view or "all",
         "summary": {
             "total": len(filtered),
             "filters": {key: value for key, value in filters.items() if not str(key).startswith("_")},
-            "filter_strategy": meta.get("filter_strategy"),
+            "filter_strategy": filter_strategy,
             "resolved_asset": meta.get("resolved_asset"),
         },
         "records": [
@@ -686,6 +800,34 @@ def _terminal_sessions(args: argparse.Namespace):
         **org_context_output(context),
     }
     return _attach_filter_diagnostics(payload, filters)
+
+
+def _job_list(args: argparse.Namespace):
+    context = ensure_selected_org_context()
+    client = create_client()
+    filters = merge_filter_args(
+        args,
+        explicit_fields=("name", "search"),
+        forbidden_fields=("limit", "offset"),
+        usage_examples=JOB_LIST_EXAMPLES,
+    )
+    path = "/api/v1/audits/jobs/"
+    records = client.list_paginated(path, params=_list_request_filters(path, filters))
+    filter_strategy = "server"
+    if filters.get("search") not in {None, ""}:
+        filter_strategy = "server_search"
+    if filters.get("name") not in {None, ""}:
+        filter_strategy = "server_name_exact" if filter_strategy == "server" else _merge_match_strategy(filter_strategy, "server_name_exact")
+    return {
+        "resource": "job-list",
+        "summary": {
+            "total": len(records) if isinstance(records, list) else 0,
+            "filters": filters,
+            "filter_strategy": filter_strategy,
+        },
+        "records": records,
+        **org_context_output(context),
+    }
 
 
 def _command_storage_hint(args: argparse.Namespace):
@@ -732,6 +874,7 @@ def _audit_analyze(args: argparse.Namespace):
                 "user_id",
                 "asset",
                 "asset_keywords",
+                "search",
                 "keyword",
                 "direction",
                 "status",
@@ -740,10 +883,9 @@ def _audit_analyze(args: argparse.Namespace):
                 "source_ip",
                 "command_storage_id",
                 "command_storage_scope",
-                "limit",
-                "offset",
                 "top",
             ),
+            forbidden_fields=("limit", "offset"),
             usage_examples=AUDIT_ANALYZE_EXAMPLES,
         )
     )
@@ -794,7 +936,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="JumpServer 统一只读查询入口。",
         epilog=(
             "推荐路径:\n"
-            "  1. 优先使用显式参数，例如 --name、--days、--user、--limit\n"
+            "  1. 优先使用显式参数，例如 --name、--days、--user\n"
             "  2. 高级补充筛选使用重复的 --filter key=value\n"
             "  3. 只有兼容旧命令时再使用 --filters '{\"key\": \"value\"}'"
         ),
@@ -827,7 +969,6 @@ def build_parser() -> argparse.ArgumentParser:
     object_list.add_argument("--kind", help="仅当 --resource asset 时可选，用于限定资产子类型。")
     object_list.add_argument("--name", help="按名称精确优先匹配。")
     object_list.add_argument("--search", help="服务端搜索关键字。")
-    _add_pagination_arguments(object_list)
     add_filter_arguments(object_list)
     object_list.set_defaults(func=_object_list)
 
@@ -852,9 +993,9 @@ def build_parser() -> argparse.ArgumentParser:
     permission_list.add_argument("--name", help="按权限名称精确优先匹配。")
     permission_list.add_argument("--search", help="服务端搜索关键字。")
     permission_list.add_argument("--user", help="按用户名或显示名筛选 asset-permission。")
+    permission_list.add_argument("--user-id", dest="user_id", help="按用户 UUID 筛选 asset-permission。")
     permission_list.add_argument("--users", help="兼容字段，按用户标识筛选 asset-permission。")
     permission_list.add_argument("--is-expired", dest="is_expired", help="按过期状态筛选，例如 true / false。")
-    _add_pagination_arguments(permission_list)
     add_filter_arguments(permission_list)
     permission_list.set_defaults(func=_permission_list)
 
@@ -877,19 +1018,44 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=CLIHelpFormatter,
     )
     asset_perm_users.add_argument("--asset-id", required=True)
-    _add_pagination_arguments(asset_perm_users)
     add_filter_arguments(asset_perm_users)
     asset_perm_users.set_defaults(func=_asset_perm_users)
 
     audit_list = subparsers.add_parser(
         "audit-list",
         help="读取登录、会话、命令等审计明细。",
-        description="读取指定审计类型的明细记录；未给时间时默认最近 7 天。",
+        description="读取指定审计类型的页面同款审计明细；未给时间时默认最近 7 天。",
         epilog="Examples:\n  " + "\n  ".join(AUDIT_LIST_EXAMPLES),
         formatter_class=CLIHelpFormatter,
     )
     audit_list.add_argument("--audit-type", required=True, choices=sorted(AUDIT_PATHS))
-    _add_common_audit_filter_arguments(audit_list, include_keyword=True)
+    _add_page_query_time_arguments(audit_list)
+    audit_list.add_argument("--user", help="页面精确用户过滤；用于 operate、password_change、session、terminal-session。输入用户名或显示名时会解析成页面显示值。")
+    audit_list.add_argument("--username", help="登录日志页面用户名精确过滤；最终下发 `name(username)`，仅当 audit-type=login 时生效。")
+    audit_list.add_argument("--ip", help="登录日志页面来源 IP 精确过滤，仅当 audit-type=login 时生效。")
+    audit_list.add_argument("--type", help="登录日志页面设备类型精确过滤；仅当 audit-type=login 时生效，只支持 `W/T/U`。")
+    audit_list.add_argument("--city", help="登录日志页面城市精确过滤，仅当 audit-type=login 时生效。")
+    audit_list.add_argument("--mfa", help="登录日志页面 MFA 状态精确过滤；仅当 audit-type=login 时生效，只支持 `0/1/2`。")
+    audit_list.add_argument("--status", help="登录日志页面状态精确过滤；仅当 audit-type=login 时生效，只支持 `0/1`；不传时统计该时间窗内的全部登录记录。")
+    audit_list.add_argument("--change-by", dest="change_by", help="改密日志页面修改者精确过滤；最终下发 `name(username)`，仅当 audit-type=password_change 时生效。")
+    audit_list.add_argument("--remote-addr", dest="remote_addr", help="页面远端地址精确过滤；仅当 audit-type=password_change、session 或 terminal-session 时生效。")
+    audit_list.add_argument("--creator-name", dest="creator__name", help="作业日志页面创建者精确过滤；最终下发创建者显示名，仅当 audit-type=jobs 时生效。")
+    audit_list.add_argument("--material", help="作业日志页面执行内容精确过滤，仅当 audit-type=jobs 时生效。")
+    audit_list.add_argument("--asset", help="页面资产精确过滤；用于 session 和 terminal-session，输入名称或地址时会解析成 `name(ip)`。")
+    audit_list.add_argument("--asset-id", dest="asset_id", help="资产 UUID 精确过滤，仅当 audit-type=session、terminal-session 或 command 时生效。")
+    audit_list.add_argument("--account", help="页面账号精确过滤；用于 session 和 terminal-session，输入名称或用户名时会解析成 `name(username)`。")
+    audit_list.add_argument("--protocol", help="页面协议精确过滤；用于 session 和 terminal-session。")
+    audit_list.add_argument("--login-from", dest="login_from", help="页面登录来源精确过滤；用于 session 和 terminal-session，只支持 `WT/ST/RT/DT/VT`。")
+    audit_list.add_argument("--order", help="页面排序字段；仅当 audit-type=session、terminal-session 或 command 时生效。")
+    audit_list.add_argument("--action", help="操作日志页面动作精确过滤；仅当 audit-type=operate 时生效，支持 create/创建 等值。")
+    audit_list.add_argument("--resource-type", dest="resource_type", help="操作日志页面资源类型精确过滤，仅当 audit-type=operate 时生效。")
+    audit_list.add_argument("--command-storage-id", dest="command_storage_id", help="命令记录页面指定 command storage ID，仅当 audit-type=command 时生效。")
+    audit_list.add_argument(
+        "--command-storage-scope",
+        dest="command_storage_scope",
+        choices=["all"],
+        help="命令记录页面设为 `all` 时汇总全部可访问 command storage，仅当 audit-type=command 时生效。",
+    )
     add_filter_arguments(audit_list)
     audit_list.set_defaults(func=_audit_list)
 
@@ -909,14 +1075,34 @@ def build_parser() -> argparse.ArgumentParser:
     terminal_sessions = subparsers.add_parser(
         "terminal-sessions",
         help="读取 terminal 在线或历史会话。",
-        description="查询 terminal 组件的在线或历史会话，支持资产、本地时间窗和用户过滤。",
+        description="查询 terminal 组件的在线或历史会话，支持页面同款时间窗、搜索和精确字段过滤。",
         epilog="Examples:\n  " + "\n  ".join(TERMINAL_SESSION_EXAMPLES),
         formatter_class=CLIHelpFormatter,
     )
     terminal_sessions.add_argument("--view", choices=["online", "history"])
-    _add_common_audit_filter_arguments(terminal_sessions, include_keyword=True)
+    _add_page_query_time_arguments(terminal_sessions)
+    terminal_sessions.add_argument("--user", help="页面用户精确过滤；输入用户名或显示名时会解析成 `name(username)`。")
+    terminal_sessions.add_argument("--account", help="页面账号精确过滤；输入名称或用户名时会解析成 `name(username)`。")
+    terminal_sessions.add_argument("--asset", help="页面资产精确过滤；输入名称或地址时会解析成 `name(ip)`。")
+    terminal_sessions.add_argument("--protocol", help="页面协议精确过滤。")
+    terminal_sessions.add_argument("--login-from", dest="login_from", help="页面登录来源精确过滤；只支持 `WT/ST/RT/DT/VT`。")
+    terminal_sessions.add_argument("--remote-addr", dest="remote_addr", help="页面远端地址精确过滤。")
+    terminal_sessions.add_argument("--asset-id", dest="asset_id", help="资产 UUID 精确过滤。")
+    terminal_sessions.add_argument("--order", help="页面排序字段。")
     add_filter_arguments(terminal_sessions)
     terminal_sessions.set_defaults(func=_terminal_sessions)
+
+    job_list = subparsers.add_parser(
+        "job-list",
+        help="读取作业列表。",
+        description="读取 `/api/v1/audits/jobs/` 作业列表，支持页面搜索和名称精确过滤。",
+        epilog="Examples:\n  " + "\n  ".join(JOB_LIST_EXAMPLES),
+        formatter_class=CLIHelpFormatter,
+    )
+    job_list.add_argument("--name", help="页面作业名称精确过滤。")
+    job_list.add_argument("--search", help="页面搜索框的直接搜索关键字。")
+    add_filter_arguments(job_list)
+    job_list.set_defaults(func=_job_list)
 
     command_storage_hint = subparsers.add_parser(
         "command-storage-hint",
@@ -960,9 +1146,34 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-    return run_and_print(args.func, args)
+    def _run_cli():
+        parser = build_parser()
+        reject_deprecated_pagination_cli_args(
+            sys.argv[1:],
+            script_name="jms_query.py",
+            deprecated_commands={
+                "object-list",
+                "permission-list",
+                "asset-perm-users",
+                "audit-list",
+                "terminal-sessions",
+                "job-list",
+                "audit-analyze",
+            },
+            usage_examples_by_command={
+                "object-list": OBJECT_LIST_EXAMPLES,
+                "permission-list": PERMISSION_LIST_EXAMPLES,
+                "asset-perm-users": ASSET_PERM_USERS_EXAMPLES,
+                "audit-list": AUDIT_LIST_EXAMPLES,
+                "terminal-sessions": TERMINAL_SESSION_EXAMPLES,
+                "job-list": JOB_LIST_EXAMPLES,
+                "audit-analyze": AUDIT_ANALYZE_EXAMPLES,
+            },
+        )
+        args = parser.parse_args(sys.argv[1:])
+        return args.func(args)
+
+    return run_and_print(_run_cli)
 
 
 if __name__ == "__main__":
