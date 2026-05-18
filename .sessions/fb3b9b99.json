@@ -1,0 +1,15 @@
+{
+  "session_id": "fb3b9b99",
+  "protocol": "ssh",
+  "host": "10.1.12.62",
+  "port": 22022,
+  "username": "JMS-aebdbe4f-08c5-4fb0-8df5-9fe84da688af",
+  "token_password": "bqFAIXzP4F3x5O7T",
+  "asset_name": "10.1.12.62(10.1.12.62)",
+  "account_username": "root",
+  "expires_at": "2026/05/18 17:41:22 +0800",
+  "connected_at": "2026/05/18 17:36:22",
+  "last_activity_at": "2026/05/18 17:36:47",
+  "status": "error",
+  "error_message": "Authentication failed."
+}

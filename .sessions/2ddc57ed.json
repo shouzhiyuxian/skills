@@ -1,0 +1,15 @@
+{
+  "session_id": "2ddc57ed",
+  "protocol": "mysql",
+  "host": "10.1.12.62",
+  "port": 33061,
+  "username": "3b288fbe-56a0-4262-bb58-f5db840ac92d",
+  "token_password": "2vGalY2jX7T6im8v",
+  "asset_name": "62mysql(10.1.12.62)",
+  "account_username": "root",
+  "expires_at": "2026/05/18 17:28:22 +0800",
+  "connected_at": "2026/05/18 17:23:22",
+  "last_activity_at": "2026/05/18 17:24:34",
+  "status": "connected",
+  "error_message": ""
+}

@@ -1,0 +1,15 @@
+{
+  "session_id": "dcf343b5",
+  "protocol": "ssh",
+  "host": "10.1.12.62",
+  "port": 22022,
+  "username": "JMS-6cf0fd4f-09b6-49c5-ae2f-e473ab3d7beb",
+  "token_password": "vP1bN0KGlPYnjpd7",
+  "asset_name": "10.1.12.62(10.1.12.62)",
+  "account_username": "root",
+  "expires_at": "2026/05/18 17:43:21 +0800",
+  "connected_at": "2026/05/18 17:38:21",
+  "last_activity_at": "2026/05/18 17:38:30",
+  "status": "connected",
+  "error_message": ""
+}
