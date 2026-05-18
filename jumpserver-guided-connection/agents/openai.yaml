@@ -1,0 +1,18 @@
+interface:
+  display_name: "JumpServer Guided Connection"
+  short_description: "JumpServer V4.10 向导连接 skill。适用于 SSH、RDP、VNC 及数据库协议的向导连接，获取临时连接令牌和凭证。"
+  default_prompt: |
+    使用 $jumpserver-guided-connection 处理 JumpServer V4.10 向导连接问题。
+    当这个子目录被单独注册为 skill 根目录时，优先使用本地入口：
+    - `python3 scripts/jms_ssh_guide_cli.py get-credentials --asset <asset> --account <account>`
+    - `python3 scripts/jms_ssh_guide_cli.py get-token --asset <asset> --account <account> --protocol <protocol>`
+    
+    这些本地入口会从仓库根目录加载共享底层 `jumpserver-api/`。
+    
+    支持的协议：ssh, rdp, vnc, mysql, mariadb, postgresql, mongodb, redis
+    
+    使用场景：
+    - 获取 SSH 向导连接令牌
+    - 连接到数据库资产（MySQL、PostgreSQL 等）
+    - 获取临时连接用户名和密码
+    - RDP 或 VNC 向导连接

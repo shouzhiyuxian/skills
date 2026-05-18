@@ -21,7 +21,7 @@ description: Use when users ask about JumpServer V4.10 but the intent may span o
 - `python3 jumpserver-governance-inspection/scripts/jms_diagnose.py ...`
 - `python3 jumpserver-usage-reporting/scripts/jms_report.py ...`
 
-上面的路径默认以仓库根目录为当前工作目录；如果调用方 cwd 不在根目录，先切换到根目录，或改用仓库相对路径。这属于执行上下文问题，不要表述成“仓库路径写错”。
+上面的路径默认以仓库根目录为当前工作目录；如果调用方 cwd 不在根目录，先切换到根目录，或改用仓库相对路径。这属于执行上下文问题，不要表述成"仓库路径写错"。
 
 共享运行时与边界先看：
 
@@ -40,6 +40,7 @@ description: Use when users ask about JumpServer V4.10 but the intent may span o
 - `jumpserver-audit-investigation`：登录、会话、命令、文件传输、作业、页面同款审计明细与命名用户登录次数
 - `jumpserver-usage-reporting`：某天或某时间段的使用报告、排行、概览、HTML 模板报告
 - `jumpserver-governance-inspection`：治理巡检、capability 聚合、系统设置、许可证、工单、存储、组件负载、改密失败报表
+- `jumpserver-guided-connection`：SSH 向导连接、RDP/VNC 向导连接、数据库协议（MySQL/PostgreSQL/MongoDB 等）向导连接、获取临时连接令牌
 
 如果一句话同时命中多类，先看 [references/routing-playbook.md](references/routing-playbook.md) 再决定优先级。
 
@@ -54,10 +55,11 @@ description: Use when users ask about JumpServer V4.10 but the intent may span o
 
 ## High-Priority Routes
 
-- 命名用户在某时间窗“登录多少次 / 成功登录多少次 / 失败登录多少次”时，优先用 `jumpserver-audit-investigation`
+- 获取 SSH 向导连接令牌、连接到某资产、获取连接用户名密码、connection-token 时，优先用 `jumpserver-guided-connection`
+- 命名用户在某时间窗"登录多少次 / 成功登录多少次 / 失败登录多少次"时，优先用 `jumpserver-audit-investigation`
 - 某天或某时间段的使用情况、概览、排行、TOP、日报、周报时，优先用 `jumpserver-usage-reporting`
-- “某某用户在某组织下有哪些资产 / 节点 / 账号 / 协议”时，优先用 `jumpserver-effective-access`
-- “为什么能访问 / 权限详情 / ACL / RBAC / 授权给了谁”时，优先用 `jumpserver-permission-analysis`
+- "某某用户在某组织下有哪些资产 / 节点 / 账号 / 协议"时，优先用 `jumpserver-effective-access`
+- "为什么能访问 / 权限详情 / ACL / RBAC / 授权给了谁"时，优先用 `jumpserver-permission-analysis`
 
 ## References
 

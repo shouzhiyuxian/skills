@@ -25,10 +25,11 @@ For first-time use, the natural-language `.env` generation path is usually the f
 | User effective access scope | which assets or nodes a user can access, or which accounts/protocols a user can use on an asset | `jms_diagnose.py` | Returns effective access scope first instead of defaulting to permission-rule explanations |
 | Governance inspection | asset governance, account governance, access analysis, system inspection, capability-based aggregate analysis | `jms_diagnose.py` | Prefer capability aggregation instead of forcing users to stitch together scattered queries |
 | Usage reports | daily reports, usage situation, usage analysis, what happened on a day, rankings or overviews for a time range | `jms_report.py` | These requests produce a complete HTML report instead of a one-line summary |
+| Guided connection | SSH/RDP/VNC guided connection, database protocol (MySQL/PostgreSQL/MongoDB, etc.) guided connection, get temporary connection tokens | `jms_ssh_guide_cli.py` | Supports automatic asset name and account name resolution |
 
 ## Subskill Layout
 
-The repository keeps the root [SKILL.md](./SKILL.md) as the compatibility router skill and adds 7 narrower child skills:
+The repository keeps the root [SKILL.md](./SKILL.md) as the compatibility router skill and adds 8 narrower child skills:
 
 | Child skill | Focus | Primary entrypoint |
 |---|---|---|
@@ -39,6 +40,7 @@ The repository keeps the root [SKILL.md](./SKILL.md) as the compatibility router
 | `jumpserver-audit-investigation` | login, session, command, file-transfer, job details, named-user login counts | `jms_query.py` / `jms_diagnose.py` |
 | `jumpserver-usage-reporting` | day or time-range usage overviews, rankings, and HTML reports | `jms_report.py` |
 | `jumpserver-governance-inspection` | capability aggregation, settings, license, tickets, storage, governance inspection | `jms_diagnose.py` |
+| `jumpserver-guided-connection` | SSH/RDP/VNC guided connection, database protocol guided connection, get temporary connection tokens | `jms_ssh_guide_cli.py` |
 
 The shared pieces stay centralized: the reusable low-level modules now live in `jumpserver-api/`, `references/` remains the rules library, and `template/` remains the HTML-report template area.
 
@@ -230,6 +232,7 @@ Organization-blocking responses also include these structured fields:
 | [jumpserver-audit-investigation/SKILL.md](./jumpserver-audit-investigation/SKILL.md) | audit-investigation child skill |
 | [jumpserver-usage-reporting/SKILL.md](./jumpserver-usage-reporting/SKILL.md) | usage-reporting child skill |
 | [jumpserver-governance-inspection/SKILL.md](./jumpserver-governance-inspection/SKILL.md) | governance-inspection child skill |
+| [jumpserver-guided-connection/SKILL.md](./jumpserver-guided-connection/SKILL.md) | guided-connection child skill for SSH/RDP/database |
 | [references/single-skill-registration.md](./references/single-skill-registration.md) | how to register one child skill at a time |
 | [references/routing-playbook.md](./references/routing-playbook.md) | ordinary routing, typical trigger words, blocking rules, and counterexamples |
 | [references/report-template-playbook.md](./references/report-template-playbook.md) | template report workflow, organization priority, time-range handling, and report rules |

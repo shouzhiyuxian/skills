@@ -1,6 +1,6 @@
 interface:
   display_name: "JumpServer Skills"
-  short_description: "JumpServer V4.10 总路由 skill。先按用户意图把请求分发到更细的子 skills，再复用共享的 `query / diagnose / report` 正式入口完成对象查询、有效访问范围、权限分析、审计调查、使用报告和治理巡检。"
+  short_description: "JumpServer V4.10 总路由 skill。先按用户意图把请求分发到更细的子 skills，再复用共享的 `query / diagnose / report` 正式入口完成对象查询、有效访问范围、权限分析、审计调查、使用报告、治理巡检和向导连接。"
   default_prompt: |
     使用 $jumpserver-skills 处理 JumpServer V4.10 请求。
     先按用户意图把请求分发到更细的 JumpServer 子 skill，再调用共享的 `query / diagnose / report` 正式入口。
@@ -12,6 +12,7 @@ interface:
     - `jumpserver-audit-investigation`：登录、会话、命令、文件传输、作业、页面同款审计明细与命名用户登录次数
     - `jumpserver-usage-reporting`：某天或某时间段的使用报告、排行、概览、HTML 模板报告
     - `jumpserver-governance-inspection`：治理巡检、capability 聚合、系统设置、许可证、工单、存储、组件负载、改密失败报表
+    - `jumpserver-guided-connection`：SSH/RDP/VNC 向导连接、数据库协议向导连接、获取临时连接令牌
     正式入口返回的 JSON key 保持英文契约；对最终用户回显时，优先使用中文标签，必要时再在括号里补原字段名，例如 `生效组织（effective_org）：Default`。
     对外命令路径统一使用各子 skill 下的 `scripts/*.py` 本地入口；共享实现位于 `jumpserver-api/`。若命令找不到脚本，先检查 cwd 是否在仓库根目录，再决定是否改用仓库相对路径，不要直接把它归因为文档路径错误。
     所有子 skill 共用这些规则：先做 `config-status --json` 和 `ping` 预检；只使用正式 CLI 入口；不生成临时 SDK/HTTP 脚本；不猜对象 ID、组织或鉴权信息；不执行业务写操作。

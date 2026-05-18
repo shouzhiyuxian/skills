@@ -1,6 +1,6 @@
 # JumpServer Skills
 
-`jumpserver-skills` 是一个面向 JumpServer V4.10 的 skill 仓库。当前结构已经从单个大而全 skill，拆成“1 个总路由 skill + 多个按用户意图划分的子 skills + 共享运行时”。它仍然适用于对象查询、权限回看、审计调查、治理巡检、访问分析，以及某一天或某一段时间的堡垒机使用报告，但现在触发边界更窄、维护成本也更低。
+`jumpserver-skills` 是一个面向 JumpServer V4.10 的 skill 仓库。当前结构已经从单个大而全 skill，拆成"1 个总路由 skill + 多个按用户意图划分的子 skills + 共享运行时"。它仍然适用于对象查询、权限回看、审计调查、治理巡检、访问分析，以及某一天或某一段时间的堡垒机使用报告，但现在触发边界更窄、维护成本也更低。
 
 仓库内部仍然统一复用 `jms_query.py`、`jms_diagnose.py`、`jms_report.py` 三类正式入口。默认保持只读，仅允许本地运行时写入 `.env` 和当前组织上下文，不执行 JumpServer 业务写操作。
 
@@ -9,26 +9,27 @@
 ## 最快上手
 
 1. 把这个 skill 接到你的 agent 或 Codex 环境里。仓库中的 [agents/openai.yaml](./agents/openai.yaml) 可以直接作为接入描述使用。
-2. 直接用自然语言初始化配置，例如“帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录”。
-3. 然后继续直接提需求，例如“查某某用户在 Default 组织下有哪些资产”或“看看昨天使用情况”。
+2. 直接用自然语言初始化配置，例如"帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录"。
+3. 然后继续直接提需求，例如"查某某用户在 Default 组织下有哪些资产"或"看看昨天使用情况"。
 
-第一次使用时，优先推荐走“自然语言对话生成 `.env`”这条路径，通常比手动改模板更快。
+第一次使用时，优先推荐走"自然语言对话生成 `.env`"这条路径，通常比手动改模板更快。
 
 ## 这个 skill 能做什么
 
 | 能力分组 | 适合处理的请求 | 入口名称 | 说明 |
 |---|---|---|---|
 | 对象查询 | 资产、账号、用户、用户组、组织、平台、节点、标签、网域查询 | `jms_query.py` | 适合精确查询对象清单或读取单个对象详情 |
-| 权限关系 | 授权规则、ACL、RBAC、资产授权给了谁、谁能访问某资产、某条权限详情 | `jms_query.py` / `jms_diagnose.py` | 默认区分“授权主体”和“实际可访问者”，不把超级管理员默认混入授权主体 |
+| 权限关系 | 授权规则、ACL、RBAC、资产授权给了谁、谁能访问某资产、某条权限详情 | `jms_query.py` / `jms_diagnose.py` | 默认区分"授权主体"和"实际可访问者"，不把超级管理员默认混入授权主体 |
 | 审计调查 | 登录、会话、命令、文件传输、异常行为、高危命令、失败登录调查 | `jms_query.py` | 适合日志、记录、明细、详情类请求 |
 | 配置与诊断 | 配置检查、连通性、组织切换、对象解析、许可证、系统设置、存储、工单 | `jms_diagnose.py` | 适合预检、环境确认和治理前置检查 |
 | 用户有效访问范围 | 某某用户有哪些资产、某某用户在某组织下有哪些节点、某某用户在某资产下有哪些账号/协议 | `jms_diagnose.py` | 优先返回 effective access 结果，不默认展开授权规则说明；资产/节点清单以 `user-assets` / `user-nodes` 为准 |
 | 治理巡检 | 资产治理、账号治理、访问分析、系统巡检、capability 聚合分析 | `jms_diagnose.py` | 优先走能力化聚合，而不是让使用者手工拼零散查询 |
 | 使用报告 | 日报、使用情况、使用分析、某天发生了什么、某时间段排行或概览 | `jms_report.py` | 这类请求默认输出完整 HTML 报告，而不是只给一句摘要 |
+| 向导连接 | SSH/RDP/VNC 向导连接、数据库协议（MySQL/PostgreSQL/MongoDB 等）向导连接、获取临时连接令牌 | `jms_ssh_guide_cli.py` | 支持资产名称和账号名称自动解析 |
 
 ## 子 skill 结构
 
-仓库现在保留根目录 [SKILL.md](./SKILL.md) 作为兼容旧入口的总路由 skill，同时新增 7 个按用户意图拆分的子 skill：
+仓库现在保留根目录 [SKILL.md](./SKILL.md) 作为兼容旧入口的总路由 skill，同时新增 8 个按用户意图拆分的子 skill：
 
 | 子 skill | 负责意图 | 主要入口 |
 |---|---|---|
@@ -39,10 +40,11 @@
 | `jumpserver-audit-investigation` | 登录、会话、命令、文件传输、作业、命名用户登录次数 | `jms_query.py` / `jms_diagnose.py` |
 | `jumpserver-usage-reporting` | 某天或某时间段的使用情况、排行、概览、HTML 报告 | `jms_report.py` |
 | `jumpserver-governance-inspection` | capability 聚合、系统设置、许可证、工单、存储、治理巡检 | `jms_diagnose.py` |
+| `jumpserver-guided-connection` | SSH/RDP/VNC 向导连接、数据库协议向导连接、获取临时连接令牌 | `jms_ssh_guide_cli.py` |
 
 共享部分没有拆散：真正复用的底层模块现在位于 `jumpserver-api/`，`references/` 继续承载规则文档，`template/` 继续承载 HTML 报告模板。
 
-为了适配“一次只能注册一个 skill”的宿主，每个子 skill 目录现在还额外带了两类轻量文件：
+为了适配"一次只能注册一个 skill"的宿主，每个子 skill 目录现在还额外带了两类轻量文件：
 
 - `agents/openai.yaml`：该子 skill 的独立接入描述
 - `scripts/*.py`：各子 skill 的本地入口脚本，直接加载 `jumpserver-api/`，不再把 `jumpserver-runtime-setup` 当成全部 Python 代码的宿主
@@ -63,14 +65,14 @@ cp .env.example .env
 
 如果本地配置不完整，运行时也可以直接通过自然语言对话帮你生成 `.env`。它会按固定顺序收集 `JMS_API_URL`、认证方式、组织、超时和 TLS 配置，回显脱敏摘要后写入本地 `.env`。例如：
 
-- “帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录。”
-- “帮我初始化 JumpServer 配置，我用用户名密码登录，不校验证书。”
+- "帮我生成 `.env`，JumpServer 地址是 `https://jump.example.com`，我用 AK/SK 登录。"
+- "帮我初始化 JumpServer 配置，我用用户名密码登录，不校验证书。"
 
 2. 把这个 skill 接到你的 agent 或 Codex 环境里使用。仓库中的 [agents/openai.yaml](./agents/openai.yaml) 提供的是总路由 skill 的接入描述。
 
 3. 如果你的运行环境支持多 skill 发现，优先直接触发更窄的子 skill；如果宿主一次只能注册一个 skill，也可以直接注册某个 `jumpserver-*` 子目录，并使用它自己的 `agents/openai.yaml`。
 
-4. 直接用自然语言描述需求，不需要手动拼接脚本命令。例如“查某某用户在 Default 组织下有哪些资产”“看看昨天使用情况”“看某条授权规则详情”。
+4. 直接用自然语言描述需求，不需要手动拼接脚本命令。例如"查某某用户在 Default 组织下有哪些资产""看看昨天使用情况""看某条授权规则详情"。
 
 5. 根据返回结果继续补充上下文。如果结果提示 `candidate_orgs`、`switchable_orgs`、候选对象或缺少时间范围，就按提示补充组织、对象名称、平台或时间窗口。组织必须先选时，返回里还会带 `reason_code`、`user_message`、`action_hint`、`suggested_commands` 和 `candidate_org_count`，方便直接按提示继续。
 
@@ -140,28 +142,28 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 
 ## 典型请求示例
 
-- “查一下 `Demo-User` 这个用户的详情。”
-- “看看名为 `Demo-Node` 的资产节点里有哪些资产。”
-- “帮我看 `Linux` 平台下有哪些可用资产。”
-- “查某某用户在 Default 组织下有哪些资产。”
-- “看这条授权规则详情，顺便告诉我它影响哪些用户和资产。”
-- “谁能访问这台资产？”
-- “查最近一周的登录审计。”
-- “看某个用户的会话记录和异常中断情况。”
-- “帮我排查昨天的高危命令和文件传输审计。”
-- “看看某天使用情况。”
-- “帮我分析下某天堡垒机器的使用情况。”
-- “帮我看昨天登录情况。”
-- “想看上周谁登录最多。”
-- “过一下 3 月上旬哪些资产最活跃。”
-- “看某天登录日志明细。”
-- “导出某天命令记录详情。”
+- "查一下 `Demo-User` 这个用户的详情。"
+- "看看名为 `Demo-Node` 的资产节点里有哪些资产。"
+- "帮我看 `Linux` 平台下有哪些可用资产。"
+- "查某某用户在 Default 组织下有哪些资产。"
+- "看这条授权规则详情，顺便告诉我它影响哪些用户和资产。"
+- "谁能访问这台资产？"
+- "查最近一周的登录审计。"
+- "看某个用户的会话记录和异常中断情况。"
+- "帮我排查昨天的高危命令和文件传输审计。"
+- "看看某天使用情况。"
+- "帮我分析下某天堡垒机器的使用情况。"
+- "帮我看昨天登录情况。"
+- "想看上周谁登录最多。"
+- "过一下 3 月上旬哪些资产最活跃。"
+- "看某天登录日志明细。"
+- "导出某天命令记录详情。"
 
 这类边界尤其重要：
 
 - `某某用户在 Default 组织下有哪些资产`、`某某用户有哪些节点`、`某某用户在某资产下有哪些账号` 这类结果型问法，属于用户有效访问范围，优先返回资产 / 节点 / 账号范围结果，不回退成授权规则说明。
 - `某某用户为什么能访问某资产`、`某条授权规则详情` 这类原因型问法，属于权限关系或访问分析。
-- `这台资产授权给了谁`、`谁被授权到这台资产` 默认回答授权主体，不默认把超级管理员算进去；只有用户明确要求“实际可访问者（含超管）”时才补充超级管理员集合。
+- `这台资产授权给了谁`、`谁被授权到这台资产` 默认回答授权主体，不默认把超级管理员算进去；只有用户明确要求"实际可访问者（含超管）"时才补充超级管理员集合。
 - `某天登录情况`、`某天会话概览`、`某时间段谁最多` 这类表达，属于报告/使用分析。
 - `某天登录日志`、`某天命令记录`、`某条会话详情` 这类表达，属于审计调查。
 
@@ -175,11 +177,11 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 - 某天登录 / 会话 / 命令 / 传输情况
 - 某时间段的排行、TOP、谁最多、哪些资产最活跃
 
-这类请求默认直接产出完整 HTML 报告，不先回退成自由文本摘要。只有当用户明确说“不要生成报告，直接分析”“先简单说下”“只给我结论”“不用模板”时，才允许跳过模板直接给简短分析。
+这类请求默认直接产出完整 HTML 报告，不先回退成自由文本摘要。只有当用户明确说"不要生成报告，直接分析""先简单说下""只给我结论""不用模板"时，才允许跳过模板直接给简短分析。
 
 日期表达速查：
 
-- `某天` 只是占位说法，用户不需要真的输入“某天”。常见自然语言表达包括：
+- `某天` 只是占位说法，用户不需要真的输入"某天"。常见自然语言表达包括：
   - `昨天`
   - `20260310`
   - `2026-03-10`
@@ -198,11 +200,11 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 
 时间表达会先归一化为明确时间窗：
 
-- “昨天” -> 前一天 `00:00:00 ~ 23:59:59`
+- "昨天" -> 前一天 `00:00:00 ~ 23:59:59`
 - `20260310` -> `2026-03-10 00:00:00 ~ 23:59:59`
 - `2026-03-10` / `2026/03/10` / `3月10号` / `3 月 10 日` / `2026年3月10日` -> 同一天 `00:00:00 ~ 23:59:59`
-- “上周” -> 上一个自然周，周一 `00:00:00 ~ 周日 23:59:59`
-- “本月” -> 本月 1 日 `00:00:00` 到当前日期或月末 `23:59:59`
+- "上周" -> 上一个自然周，周一 `00:00:00 ~ 周日 23:59:59`
+- "本月" -> 本月 1 日 `00:00:00` 到当前日期或月末 `23:59:59`
 
 常见归一化结果示例：
 
@@ -212,12 +214,12 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 - `帮我分析下2026-03-10到2026-03-24的堡垒机使用情况` -> 最终归一化为 `date_from=2026-03-10 00:00:00`，`date_to=2026-03-24 23:59:59`
 
 报告固定输出到 `reports/JumpServer-YYYY-MM-DD.html`。如果请求里涉及命令审计字段，报告会按既定规则处理可访问的 command storage 汇总，不需要使用者手动选择内部取数逻辑。
-报告成功时，默认先回显“报告已生成”，并附上报告文件路径、文件存在性/大小、模板路径、字段元数据路径、时间范围、组织和 `validation_summary`；简短摘要只能作为补充，不能替代这些报告产物信息。
+报告成功时，默认先回显"报告已生成"，并附上报告文件路径、文件存在性/大小、模板路径、字段元数据路径、时间范围、组织和 `validation_summary`；简短摘要只能作为补充，不能替代这些报告产物信息。
 
 ## 组织选择与阻塞规则
 
 - 用户显式指定组织时，按用户指定组织执行；`user-assets` / `user-nodes` / `user-asset-access` 优先使用命令级 `--org-id` / `--org-name` 临时限定组织，不写回 `.env`。
-- 报告或使用分析请求未指定组织，或用户明确说“所有组织”“全局组织”时，默认优先尝试全局组织 `00000000-0000-0000-0000-000000000000`。
+- 报告或使用分析请求未指定组织，或用户明确说"所有组织""全局组织"时，默认优先尝试全局组织 `00000000-0000-0000-0000-000000000000`。
 - 普通查询请求未指定组织时，会按现有组织规则处理；如果无法自动确定组织，会返回 `candidate_orgs`，并通过 `user_message` / `action_hint` 明确要求先选择查询组织。
 - 当前组织已生效但仍有其他可切换组织时，结果会继续回显 `switchable_orgs`，并通过 `org_context_hint` 明确说明当前查询范围固定在哪个组织。
 - 如果当前组织是 A、目标对象在 B，不会自动跨组织继续执行。
@@ -234,7 +236,7 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 其中组织阻塞响应会额外返回这些结构化字段：
 
 - `reason_code=organization_selection_required`
-- `user_message`：明确提示“继续前必须先选择一个组织”
+- `user_message`：明确提示"继续前必须先选择一个组织"
 - `action_hint`：给出安全下一步命令模板
 - `suggested_commands`：给出 1 到 3 条可直接复制的后续命令
 - `candidate_org_count`：当前候选组织数量
@@ -253,6 +255,7 @@ python3 jumpserver-audit-investigation/scripts/jms_query.py audit-analyze --capa
 | [jumpserver-audit-investigation/SKILL.md](./jumpserver-audit-investigation/SKILL.md) | 审计调查子 skill |
 | [jumpserver-usage-reporting/SKILL.md](./jumpserver-usage-reporting/SKILL.md) | 使用报告与 HTML 模板报告子 skill |
 | [jumpserver-governance-inspection/SKILL.md](./jumpserver-governance-inspection/SKILL.md) | 治理巡检与 capability 聚合子 skill |
+| [jumpserver-guided-connection/SKILL.md](./jumpserver-guided-connection/SKILL.md) | SSH/RDP/数据库向导连接子 skill |
 | [references/single-skill-registration.md](./references/single-skill-registration.md) | 宿主一次只能注册一个 skill 时的接入方式 |
 | [references/routing-playbook.md](./references/routing-playbook.md) | 普通路由、典型触发词、阻塞规则与反例 |
 | [references/report-template-playbook.md](./references/report-template-playbook.md) | 模板化报告流程、组织优先级、时间范围与报告规则 |
